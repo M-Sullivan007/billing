@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>M&S Sullivan — Billing System</title>
 <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script>window.msalReady = false;</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=IBM+Plex+Sans+Thai:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css" rel="stylesheet">
@@ -305,12 +306,19 @@ const msalConfig = {
   auth: { clientId: CONFIG.clientId, authority: `https://login.microsoftonline.com/${CONFIG.tenantId}`, redirectUri: CONFIG.redirectUri },
   cache: { cacheLocation: 'sessionStorage' }
 };
-const msalApp = new msal.PublicClientApplication(msalConfig);
+let msalApp = null;
 let currentUser = null;
 let accessToken = null;
 
+async function initMsal() {
+  if(msalApp) return;
+  msalApp = new msal.PublicClientApplication(msalConfig);
+  await msalApp.initialize();
+}
+
 async function signIn() {
   try {
+    await initMsal();
     const result = await msalApp.loginPopup({ scopes: CONFIG.scopes });
     currentUser = result.account;
     accessToken = result.accessToken;
@@ -319,6 +327,7 @@ async function signIn() {
 }
 
 async function getToken() {
+  await initMsal();
   try {
     const result = await msalApp.acquireTokenSilent({ scopes: CONFIG.scopes, account: currentUser });
     accessToken = result.accessToken;
@@ -331,7 +340,7 @@ async function getToken() {
 }
 
 function signOut() {
-  msalApp.logoutPopup();
+  if(msalApp) msalApp.logoutPopup();
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
 }
@@ -1299,11 +1308,15 @@ function saveSettings() {
 // AUTO-LOGIN CHECK
 // ═══════════════════════════════════════════════════
 (async function() {
-  await msalApp.initialize();
-  const accounts = msalApp.getAllAccounts();
-  if(accounts.length > 0) {
-    currentUser = accounts[0];
-    await initApp();
+  try {
+    await initMsal();
+    const accounts = msalApp.getAllAccounts();
+    if(accounts.length > 0) {
+      currentUser = accounts[0];
+      await initApp();
+    }
+  } catch(e) {
+    console.log('Auto-login skipped:', e.message);
   }
 })();
 </script>
