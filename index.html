@@ -196,22 +196,24 @@ select.form-input{cursor:pointer}
 @media print{
   body>*:not(#print-root){display:none!important}
   #print-root{display:block!important;font-family:'Sarabun',sans-serif;font-size:12px;color:#000;padding:0}
-  .print-page{padding:20px 28px;min-height:297mm}
-  .print-header-img{width:100%;max-height:80px;object-fit:contain;object-position:left;margin-bottom:12px}
-  .print-company{font-size:11px;margin-bottom:14px;line-height:1.6}
-  .print-doc-title{text-align:right;font-size:16px;font-weight:700;color:#1A3A5C;margin-bottom:14px}
-  .print-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:14px;font-size:11px}
+  .print-page{padding:16px 24px;min-height:297mm;font-family:'Sarabun',sans-serif}
+  .print-header-img{width:100%;height:70px;object-fit:fill;display:block;margin-bottom:10px}
+  .print-company{font-size:10.5px;margin-bottom:12px;line-height:1.7}
+  .print-doc-title{text-align:right;font-size:15px;font-weight:700;color:#1A3A5C;margin-bottom:12px}
+  .print-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:12px;font-size:10.5px}
   .print-info-label{font-weight:600}
-  .print-table{width:100%;border-collapse:collapse;margin:12px 0;font-size:11px}
+  .print-table{width:100%;border-collapse:collapse;margin:10px 0;font-size:10.5px}
   .print-table th{background:#1A3A5C;color:#fff;padding:6px 10px;text-align:left}
-  .print-table td{padding:6px 10px;border-bottom:1px solid #e0e0e0}
-  .print-totals{float:right;width:260px;margin-top:10px;font-size:11px}
+  .print-table td{padding:6px 10px;border-bottom:1px solid #e0e0e0;vertical-align:top}
+  .print-table td.desc{white-space:pre-wrap;line-height:1.5}
+  .print-totals{float:right;width:260px;margin-top:10px;font-size:10.5px}
   .print-total-row{display:flex;justify-content:space-between;padding:3px 0}
   .print-total-row.net{border-top:2px solid #1A3A5C;font-weight:700;font-size:13px;padding-top:5px;margin-top:3px}
-  .print-footer{clear:both;margin-top:14px;font-size:11px}
-  .print-sign{display:flex;justify-content:space-between;margin-top:50px}
-  .print-sign-box{text-align:center;width:200px}
-  .print-sign-line{border-top:1px solid #000;padding-top:5px;margin-top:32px;font-size:10px}
+  .print-footer{clear:both;margin-top:12px;font-size:10.5px}
+  .print-sign{display:flex;justify-content:space-between;margin-top:40px}
+  .print-sign-box{text-align:center;width:220px}
+  .print-sign-line{border-top:1px solid #000;padding-top:5px;margin-top:8px;font-size:10px}
+  .print-sig-img{height:60px;object-fit:contain;display:block;margin:0 auto 4px}
 }
 </style>
 </head>
@@ -1473,8 +1475,11 @@ function printDoc(docId) {
   const co = {...COMPANY,...coInfo};
 
   const headerHtml = co.headerImageBase64
-    ? `<img src="${co.headerImageBase64}" class="print-header-img">`
-    : `<div style="height:60px;background:linear-gradient(135deg,#2D8A5E,#1A3A5C);border-radius:8px;margin-bottom:12px;display:flex;align-items:center;padding:0 20px"><span style="color:#fff;font-size:18px;font-weight:700">M & Sullivan</span></div>`;
+    ? `<img src="${co.headerImageBase64}" class="print-header-img" style="width:100%;height:70px;object-fit:fill">`
+    : `<div style="height:70px;background:linear-gradient(135deg,#2D8A5E,#1A3A5C);margin-bottom:10px;display:flex;align-items:center;padding:0 20px"><span style="color:#fff;font-size:18px;font-weight:700">M & Sullivan</span></div>`;
+  const sigHtml = co.signatureImageBase64
+    ? `<img src="${co.signatureImageBase64}" class="print-sig-img">`
+    : `<div style="height:60px"></div>`;
 
   const pr = document.getElementById('print-root');
   pr.style.display = 'block';
@@ -1500,7 +1505,13 @@ function printDoc(docId) {
     </div>
     <table class="print-table">
       <thead><tr><th style="width:6%">No.</th><th>รายการ</th><th style="width:10%;text-align:center">จำนวน</th><th style="width:14%;text-align:right">หน่วยละ</th><th style="width:14%;text-align:right">ราคา</th></tr></thead>
-      <tbody>${(doc.items||[]).map((it,i)=>`<tr><td style="text-align:center">${i+1}</td><td style="white-space:pre-wrap">${it.desc}</td><td style="text-align:center">${it.qty}</td><td style="text-align:right">${fmtN(it.unit)}</td><td style="text-align:right">${fmtN(it.qty*it.unit)}</td></tr>`).join('')}</tbody>
+      <tbody>${(doc.items&&doc.items.length ? doc.items : [{desc:'(ไม่มีรายละเอียด)',qty:'',unit:''}]).map((it,i)=>`<tr>
+        <td style="text-align:center;vertical-align:top">${it.qty?i+1:''}</td>
+        <td class="desc">${it.desc||''}</td>
+        <td style="text-align:center;vertical-align:top">${it.qty||''}</td>
+        <td style="text-align:right;vertical-align:top">${it.unit?fmtN(it.unit):''}</td>
+        <td style="text-align:right;vertical-align:top">${it.qty&&it.unit?fmtN(it.qty*it.unit):''}</td>
+      </tr>`).join('')}</tbody>
     </table>
     <div style="overflow:hidden">
       <div class="print-totals">
@@ -1515,15 +1526,14 @@ function printDoc(docId) {
     ${doc.type!=='TR'?`<div class="print-footer"><strong>หมายเหตุ: บัญชีสำหรับการโอนชำระ</strong><br>${co.name}<br>${co.bank}</div>`:''}
     <div class="print-sign">
       <div class="print-sign-box">
-        <div class="print-sign-line">Prepared and authorized by:<br>(จัดทำและยืนยันความถูกต้องโดย)</div>
-        <div style="margin-top:5px;font-size:10px">( ${co.signer} )</div>
-        <div style="font-size:10px">${co.signerTitle}</div>
+        <div style="font-size:10px;margin-bottom:4px">Prepared and authorized by:<br>(จัดทำและยืนยันความถูกต้องโดย)</div>
+        ${sigHtml}
+        <div class="print-sign-line">( ${co.signer} )<br>${co.signerTitle}</div>
       </div>
       <div class="print-sign-box">
-        <div class="print-sign-line">${doc.type==='TR'?'Recipient (ผู้รับเงิน)':'Customer acceptance:<br>(รับทราบและอนุมัติ)'}</div>
-        <div style="font-size:10px;margin-top:5px">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</div>
-        <div style="font-size:10px">Signature (ลงลายมือชื่อ)</div>
-        <div style="font-size:10px;margin-top:6px">Date (วันที่) : ___________________</div>
+        <div style="font-size:10px;margin-bottom:4px">${doc.type==='TR'?'Recipient (ผู้รับเงิน)':'Customer acceptance:<br>(รับทราบและอนุมัติ)'}</div>
+        <div style="height:60px"></div>
+        <div class="print-sign-line">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )<br>Signature (ลงลายมือชื่อ)<br><span style="margin-top:4px;display:block">Date (วันที่) : ___________________</span></div>
       </div>
     </div>
   </div>`;
@@ -1556,10 +1566,19 @@ function renderSettings() {
     <div class="form-section" style="margin-top:20px">
       <div class="form-section-title">Header รูปบนเอกสาร</div>
       <div style="margin-bottom:10px">
-        ${co.headerImageBase64?`<img src="${co.headerImageBase64}" style="max-width:100%;max-height:80px;border-radius:8px;border:1px solid var(--border)"><br><br>`:'<p style="font-size:12px;color:var(--text-3);margin-bottom:8px">ยังไม่มีรูป header</p>'}
+        ${co.headerImageBase64?`<img src="${co.headerImageBase64}" style="max-width:100%;height:70px;object-fit:fill;border-radius:8px;border:1px solid var(--border)"><br><br>`:'<p style="font-size:12px;color:var(--text-3);margin-bottom:8px">ยังไม่มีรูป header</p>'}
         <input type="file" id="s-header-img" accept="image/*" onchange="previewHeader(this)" style="font-size:12px">
       </div>
       <div id="header-preview"></div>
+    </div>
+    <div class="form-section" style="margin-top:20px">
+      <div class="form-section-title">ลายเซ็น Electronic</div>
+      <div style="margin-bottom:10px">
+        ${co.signatureImageBase64?`<img src="${co.signatureImageBase64}" style="max-height:80px;object-fit:contain;border-radius:8px;border:1px solid var(--border)"><br><br>`:'<p style="font-size:12px;color:var(--text-3);margin-bottom:8px">ยังไม่มีรูปลายเซ็น</p>'}
+        <input type="file" id="s-sig-img" accept="image/*" onchange="previewSignature(this)" style="font-size:12px">
+        <p style="font-size:11px;color:var(--text-3);margin-top:6px">แนะนำ PNG พื้นหลังโปร่งใส</p>
+      </div>
+      <div id="sig-preview"></div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
       <button class="btn btn-primary" onclick="saveSettings()"><i class="ti ti-device-floppy"></i> บันทึกตั้งค่า</button>
@@ -1582,7 +1601,18 @@ function previewHeader(input) {
   if(!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    document.getElementById('header-preview').innerHTML = `<img src="${e.target.result}" style="max-width:100%;max-height:80px;border-radius:8px;border:1px solid var(--border)">`;
+    document.getElementById('header-preview').innerHTML = `<img src="${e.target.result}" style="max-width:100%;height:70px;object-fit:fill;border-radius:8px;border:1px solid var(--border)">`;
+    input._base64 = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function previewSignature(input) {
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('sig-preview').innerHTML = `<img src="${e.target.result}" style="max-height:80px;object-fit:contain;border-radius:8px;border:1px solid var(--border)">`;
     input._base64 = e.target.result;
   };
   reader.readAsDataURL(file);
@@ -1590,6 +1620,8 @@ function previewHeader(input) {
 
 function saveSettings() {
   const headerInput = document.getElementById('s-header-img');
+  const sigInput = document.getElementById('s-sig-img');
+  const prevCo = JSON.parse(localStorage.getItem('ms_company')||'{}');
   const co = {
     name: document.getElementById('s-name').value,
     address: document.getElementById('s-addr').value,
@@ -1599,7 +1631,8 @@ function saveSettings() {
     bank: document.getElementById('s-bank').value,
     signer: document.getElementById('s-signer').value,
     signerTitle: document.getElementById('s-signertitle').value,
-    headerImageBase64: headerInput._base64 || JSON.parse(localStorage.getItem('ms_company')||'{}').headerImageBase64 || ''
+    headerImageBase64: headerInput._base64 || prevCo.headerImageBase64 || '',
+    signatureImageBase64: sigInput._base64 || prevCo.signatureImageBase64 || ''
   };
   localStorage.setItem('ms_company', JSON.stringify(co));
   Object.assign(COMPANY, co);
