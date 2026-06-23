@@ -1520,13 +1520,14 @@ function printDoc(docId) {
         ${doc.refDocId?`<div style="font-size:10px"><span class="print-info-label">อ้างอิงเลขที่</span> ${doc.refDocId}</div>`:''}
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr;gap:3px;margin-bottom:10px;font-size:10px">
-      <div><span class="print-info-label">Customer Name (ชื่อ)</span> ${job.customer||''}</div>
-      <div><span class="print-info-label">Address (ที่อยู่)</span> ${job.address||''}</div>
-      <div><span class="print-info-label">Contact Person (ติดต่อ)</span> ${job.contact||''}</div>
-      <div><span class="print-info-label">Job Name (ชื่องาน)</span> ${doc.project||job.project||''}</div>
-      <div><span class="print-info-label">เลขประจำตัวผู้เสียภาษี</span> ${job.clientTaxId||''}</div>
-    </div>
+    <table style="width:100%;margin-bottom:10px;font-size:10px;border-collapse:collapse">
+      <colgroup><col style="width:38%"><col style="width:62%"></colgroup>
+      <tr><td style="padding:2px 0;font-weight:600;vertical-align:top">Customer Name (ชื่อ)</td><td style="padding:2px 0;vertical-align:top">${job.customer||''}</td></tr>
+      <tr><td style="padding:2px 0;font-weight:600;vertical-align:top">Address (ที่อยู่)</td><td style="padding:2px 0;vertical-align:top">${job.address||''}</td></tr>
+      <tr><td style="padding:2px 0;font-weight:600;vertical-align:top">Contact Person (ติดต่อ)</td><td style="padding:2px 0;vertical-align:top">${job.contact||'-'}</td></tr>
+      <tr><td style="padding:2px 0;font-weight:600;vertical-align:top">Job Name (ชื่องาน)</td><td style="padding:2px 0;vertical-align:top">${doc.project||job.project||''}</td></tr>
+      <tr><td style="padding:2px 0;font-weight:600;vertical-align:top">เลขประจำตัวผู้เสียภาษี</td><td style="padding:2px 0;vertical-align:top">${job.clientTaxId||''}</td></tr>
+    </table>
     <table class="print-table">
       <thead><tr><th style="width:6%">No.</th><th>รายการ</th><th style="width:10%;text-align:center">จำนวน</th><th style="width:14%;text-align:right">หน่วยละ</th><th style="width:14%;text-align:right">ราคา</th></tr></thead>
       <tbody>${(doc.items&&doc.items.length ? doc.items : [{desc:'(ไม่มีรายละเอียด)',qty:'',unit:''}]).map((it,i)=>`<tr>
@@ -1549,18 +1550,37 @@ function printDoc(docId) {
     </div>
     <div style="clear:both"></div>
     ${doc.type!=='TR'?`<div class="print-footer"><strong>หมายเหตุ: บัญชีสำหรับการโอนชำระ</strong><br>${co.name}<br>${co.bank}</div>`:''}
-    <div class="print-sign">
-      <div class="print-sign-box">
+    ${doc.type==='QT'||doc.type==='QQ' ? `
+    <div style="display:flex;justify-content:space-between;margin-top:24px">
+      <div style="text-align:center;width:45%">
         <div style="font-size:10px;margin-bottom:4px">Prepared and authorized by:<br>(จัดทำและยืนยันความถูกต้องโดย)</div>
         ${sigHtml}
-        <div class="print-sign-line">( ${co.signer} )<br>${co.signerTitle}</div>
+        <div style="border-top:1px solid #000;padding-top:4px;margin-top:4px;font-size:9.5px">( ${co.signer} )<br>${co.signerTitle}</div>
       </div>
-      <div class="print-sign-box">
-        <div style="font-size:10px;margin-bottom:4px">${doc.type==='TR'?'Recipient (ผู้รับเงิน)':'Customer acceptance:<br>(รับทราบและอนุมัติ)'}</div>
-        <div style="height:60px"></div>
-        <div class="print-sign-line">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )<br>Signature (ลงลายมือชื่อ)<br><span style="margin-top:4px;display:block">Date (วันที่) : ___________________</span></div>
+      <div style="text-align:center;width:45%">
+        <div style="font-size:10px;margin-bottom:4px">Customer acceptance:<br>(รับทราบและอนุมัติ)</div>
+        <div style="height:52px"></div>
+        <div style="border-top:1px solid #000;padding-top:4px;margin-top:4px;font-size:9.5px">
+          ( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )<br>
+          Signature (ลงลายมือชื่อ)<br>
+          <span style="display:block;margin-top:4px">Date (วันที่) : ___________________</span>
+        </div>
       </div>
-    </div>
+    </div>` : doc.type==='INV' ? `
+    <div style="display:flex;justify-content:flex-end;margin-top:24px">
+      <div style="text-align:center;width:45%">
+        <div style="font-size:10px;margin-bottom:4px">Prepared and authorized by:<br>(จัดทำและยืนยันความถูกต้องโดย)</div>
+        ${sigHtml}
+        <div style="border-top:1px solid #000;padding-top:4px;margin-top:4px;font-size:9.5px">( ${co.signer} )<br>${co.signerTitle}</div>
+      </div>
+    </div>` : `
+    <div style="display:flex;justify-content:flex-end;margin-top:24px">
+      <div style="text-align:center;width:45%">
+        <div style="font-size:10px;margin-bottom:4px">ผู้รับเงิน<br>(Recipient)</div>
+        ${sigHtml}
+        <div style="border-top:1px solid #000;padding-top:4px;margin-top:4px;font-size:9.5px">( ${co.signer} )<br>${co.signerTitle}</div>
+      </div>
+    </div>`}
   </div>`;
   setTimeout(() => { window.print(); pr.style.display='none'; }, 300);
 }
