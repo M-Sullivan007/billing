@@ -197,7 +197,7 @@ select.form-input{cursor:pointer}
   body>*:not(#print-root){display:none!important}
   #print-root{display:block!important;font-family:'Sarabun',sans-serif;font-size:12px;color:#000;padding:0}
   @page{size:A4;margin:12mm 16mm}
-  .print-page{font-family:'Sarabun',sans-serif;font-size:10.5px;color:#000}
+  .print-page{font-family:'Sarabun',sans-serif;font-size:10.5px;color:#000;page-break-after:avoid}
   .print-header-img{width:100%;display:block;margin-bottom:8px}
   .print-company{font-size:10px;margin-bottom:10px;line-height:1.6}
   .print-doc-title{text-align:right;font-size:15px;font-weight:700;color:#1A3A5C;margin-bottom:10px}
@@ -649,12 +649,26 @@ function showToast(msg, type='success') {
 }
 
 function numThai(n) {
-  const ones=['','หนึ่ง','สอง','สาม','สี่','ห้า','หก','เจ็ด','แปด','เก้า'];
-  const tens=['','สิบ','ยี่สิบ','สามสิบ','สี่สิบ','ห้าสิบ','หกสิบ','เจ็ดสิบ','แปดสิบ','เก้าสิบ'];
   if(!n||n===0) return 'ศูนย์บาทถ้วน';
-  const b = Math.floor(n);
-  function c(x){if(x===0)return'';if(x<10)return ones[x];if(x<100)return tens[Math.floor(x/10)]+(x%10?ones[x%10]:'');if(x<1000)return ones[Math.floor(x/100)]+'ร้อย'+c(x%100);if(x<10000)return ones[Math.floor(x/1000)]+'พัน'+c(x%1000);if(x<100000)return tens[Math.floor(x/10000)]+'หมื่น'+c(x%10000);if(x<1000000)return c(Math.floor(x/100000))+'แสน'+c(x%100000);return c(Math.floor(x/1000000))+'ล้าน'+c(x%1000000);}
-  return c(b)+'บาทถ้วน';
+  const ones = ['','หนึ่ง','สอง','สาม','สี่','ห้า','หก','เจ็ด','แปด','เก้า'];
+  const tens  = ['','สิบ','ยี่สิบ','สามสิบ','สี่สิบ','ห้าสิบ','หกสิบ','เจ็ดสิบ','แปดสิบ','เก้าสิบ'];
+
+  function conv(x) {
+    if(x === 0) return '';
+    if(x < 10)  return ones[x];
+    if(x < 100) return tens[Math.floor(x/10)] + (x%10 ? ones[x%10] : '');
+    if(x < 1000) return ones[Math.floor(x/100)] + 'ร้อย' + conv(x%100);
+    if(x < 10000) return ones[Math.floor(x/1000)] + 'พัน' + conv(x%1000);
+    if(x < 100000) return ones[Math.floor(x/10000)] + 'หมื่น' + conv(x%10000);
+    if(x < 1000000) return ones[Math.floor(x/100000)] + 'แสน' + conv(x%100000);
+    return conv(Math.floor(x/1000000)) + 'ล้าน' + conv(x%1000000);
+  }
+
+  const baht = Math.floor(Math.round(n * 100) / 100);
+  const satang = Math.round((n * 100) % 100);
+  const bahtText = conv(baht) + 'บาท';
+  const satangText = satang > 0 ? conv(satang) + 'สตางค์' : 'ถ้วน';
+  return bahtText + satangText;
 }
 
 // ═══════════════════════════════════════════════════
@@ -1496,16 +1510,21 @@ function printDoc(docId) {
       เลขประจำตัวผู้เสียภาษี ${co.taxId}<br>
       Mobile : ${co.mobile} &nbsp; Email : ${co.email}
     </div>
-    <div class="print-doc-title">${DOC_TITLES[doc.type]||''}</div>
-    <div class="print-info-grid">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+      <div style="font-size:0"></div>
+      <div style="text-align:right">
+        <div style="font-size:15px;font-weight:700;color:#1A3A5C;margin-bottom:6px">${DOC_TITLES[doc.type]||''}</div>
+        <div style="font-size:10px"><span class="print-info-label">เลขที่เอกสาร</span> ${doc.docId}</div>
+        <div style="font-size:10px"><span class="print-info-label">วันที่</span> ${fmtD(doc.date)}</div>
+        ${doc.dueDate?`<div style="font-size:10px"><span class="print-info-label">วันครบกำหนด</span> ${fmtD(doc.dueDate)}</div>`:''}
+        ${doc.refDocId?`<div style="font-size:10px"><span class="print-info-label">อ้างอิงเลขที่</span> ${doc.refDocId}</div>`:''}
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr;gap:3px;margin-bottom:10px;font-size:10px">
       <div><span class="print-info-label">Customer Name (ชื่อ)</span> ${job.customer||''}</div>
-      <div><span class="print-info-label">เลขที่เอกสาร</span> ${doc.docId}</div>
       <div><span class="print-info-label">Address (ที่อยู่)</span> ${job.address||''}</div>
-      <div><span class="print-info-label">วันที่</span> ${fmtD(doc.date)}</div>
-      <div><span class="print-info-label">Contact Person</span> ${job.contact||''}</div>
-      ${doc.dueDate?`<div><span class="print-info-label">วันครบกำหนด</span> ${fmtD(doc.dueDate)}</div>`:'<div></div>'}
+      <div><span class="print-info-label">Contact Person (ติดต่อ)</span> ${job.contact||''}</div>
       <div><span class="print-info-label">Job Name (ชื่องาน)</span> ${doc.project||job.project||''}</div>
-      ${doc.refDocId?`<div><span class="print-info-label">อ้างอิงเลขที่</span> ${doc.refDocId}</div>`:'<div></div>'}
       <div><span class="print-info-label">เลขประจำตัวผู้เสียภาษี</span> ${job.clientTaxId||''}</div>
     </div>
     <table class="print-table">
@@ -1525,9 +1544,10 @@ function printDoc(docId) {
         ${vat>0?`<div class="print-total-row"><span>จำนวนรวมทั้งสิ้น</span><span>${fmtN(sub+vat)}</span></div>`:''}
         ${wht>0?`<div class="print-total-row"><span>ภาษีหัก ณ ที่จ่าย (${doc.whtRate}%)</span><span>${fmtN(wht)}</span></div>`:''}
         <div class="print-total-row net"><span>สุทธิ</span><span>${fmtN(net)}</span></div>
+        <div style="font-size:9.5px;color:#444;margin-top:4px;text-align:left">(${numThai(net)})</div>
       </div>
     </div>
-    <div style="clear:both;margin-top:12px;font-size:11px">(${numThai(net)})</div>
+    <div style="clear:both"></div>
     ${doc.type!=='TR'?`<div class="print-footer"><strong>หมายเหตุ: บัญชีสำหรับการโอนชำระ</strong><br>${co.name}<br>${co.bank}</div>`:''}
     <div class="print-sign">
       <div class="print-sign-box">
