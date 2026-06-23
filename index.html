@@ -798,13 +798,21 @@ function renderJobs() {
 
   const jobRow = j => {
     const docs = getDocsByJob(j.index);
-    const tot = docs.filter(d=>d.type!=='QQ').reduce((s,d)=>s+d.netAmount,0);
+    // Show value from first QT only (= actual project value)
+    const firstQT = docs.filter(d=>d.type==='QT').sort((a,b)=>a.date.localeCompare(b.date))[0];
+    const qtAmt = firstQT ? firstQT.subtotal : 0;
+    // For No Billing/TU-RAC show net_received instead
+    const isGovt = j.billingStatus==='No Billing' || j.tuRac;
+    const displayAmt = isGovt ? (parseFloat(j.netReceived)||0) : qtAmt;
+    const amtLabel = displayAmt
+      ? `<span style="color:${isGovt?'var(--green)':'var(--text)'};font-weight:600">${fmtN(displayAmt)} ฿</span>`
+      : '-';
     return `<tr onclick="openJob('${j.index}')">
       <td class="mono" style="font-size:11px">${j.index}</td>
       <td><div style="font-weight:500">${j.customer}</div><div class="muted" style="font-size:11px;margin-top:1px">${j.project}</div></td>
       <td class="muted" style="font-size:11px">${j.contact||'-'}</td>
       <td>${docs.length} ใบ</td>
-      <td class="amount">${tot?fmtN(tot)+' ฿':'-'}</td>
+      <td class="amount">${amtLabel}</td>
       <td>${statusBadge(j.status)}</td>
       <td>${billingBadge(j.billingStatus)}</td>
       <td>${j.tuRac?'<span class="badge" style="background:#FEF9C3;color:#854D0E">TU-RAC</span>':''}</td>
