@@ -979,6 +979,7 @@ async function saveEditJob(idx) {
     ST.page = 'job-detail';
     ST.hist = [];
     render();
+    syncSummary();
   } catch(e) { showToast('บันทึกไม่สำเร็จ: '+e.message,'error'); }
 }
 
@@ -1128,6 +1129,72 @@ function renderNewJob() {
   </div>`);
 }
 
+async function syncSummary() {
+  try {
+    await getSiteAndDrive();
+    const advJobs = DB.jobs.filter(j=>j.type==='Advisory');
+    const lrnJobs = DB.jobs.filter(j=>j.type==='Learning');
+
+    const getDocAmt = (idx, type) => DB.docs
+      .filter(d=>d.jobIndex===idx&&d.type===type)
+      .reduce((s,d)=>s+d.subtotal,0);
+
+    // Build rows
+    const headerRow = ['Index','Year','Customer','Project','QT (฿)','INV (฿)','TR (฿)','Net Received (฿)','Status','Billing Status','Note'];
+    const jobToRow = j => [
+      j.index, j.year, j.customer, j.project,
+      getDocAmt(j.index,'QT')||'',
+      getDocAmt(j.index,'INV')||'',
+      getDocAmt(j.index,'TR')||'',
+      j.netReceived||'',
+      j.status||'', j.billingStatus||'', j.note||''
+    ];
+
+    const advRows = advJobs.map(jobToRow);
+    const lrnRows = lrnJobs.map(jobToRow);
+
+    // Calculate subtotals
+    const subTotal = (rows, col) => rows.reduce((s,r)=>s+(parseFloat(r[col])||0),0);
+    const advSub = ['SUBTOTAL Advisory','','','',
+      subTotal(advRows,4),subTotal(advRows,5),subTotal(advRows,6),subTotal(advRows,7),'','',''];
+    const lrnSub = ['SUBTOTAL Learning','','','',
+      subTotal(lrnRows,4),subTotal(lrnRows,5),subTotal(lrnRows,6),subTotal(lrnRows,7),'','',''];
+    const grandTotal = ['GRAND TOTAL','','','',
+      (subTotal(advRows,4)+subTotal(lrnRows,4)),
+      (subTotal(advRows,5)+subTotal(lrnRows,5)),
+      (subTotal(advRows,6)+subTotal(lrnRows,6)),
+      (subTotal(advRows,7)+subTotal(lrnRows,7)),'','',''];
+
+    // Build all rows to write
+    const allRows = [
+      ['M&Sullivan — Project Summary','','','','','','','','','',''],
+      ['Advisory','','','','','','','','','',''],
+      headerRow,
+      ...advRows,
+      advSub,
+      ['','','','','','','','','','',''],
+      ['Learning','','','','','','','','','',''],
+      headerRow,
+      ...lrnRows,
+      lrnSub,
+      ['','','','','','','','','','',''],
+      grandTotal,
+    ];
+
+    // Write to Summary sheet — clear and rewrite
+    const sheetUrl = `/drives/${DRIVE_ID}/items/${CONFIG.fileId}/workbook/worksheets/Summary/range(address='A1:K${allRows.length}')`;
+    const token = await getToken();
+    await fetch(`https://graph.microsoft.com/v1.0${sheetUrl}`, {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: allRows })
+    });
+    console.log('Summary synced!', allRows.length, 'rows');
+  } catch(e) {
+    console.warn('Summary sync failed (non-critical):', e.message);
+  }
+}
+
 async function saveNewJob() {
   const type = document.getElementById('nj-type').value;
   const customer = document.getElementById('nj-customer').value.trim();
@@ -1158,6 +1225,7 @@ async function saveNewJob() {
     ST.page = 'job-detail';
     ST.hist = [];
     render();
+    syncSummary(); // async, non-blocking
   } catch(e) { showToast('บันทึกไม่สำเร็จ: '+e.message,'error'); }
 }
 
@@ -1433,6 +1501,7 @@ async function saveNewDoc() {
     ST.prefillJob = null;
     showToast(`บันทึกสำเร็จ! เลขที่: ${docId}`);
     printDoc(docId);
+    syncSummary(); // async, non-blocking
     if(jobIdx) { ST.curJob=jobIdx; ST.page='job-detail'; ST.hist=[]; render(); }
     else nav('docs');
   } catch(e) { showToast('บันทึกไม่สำเร็จ: '+e.message,'error'); }
