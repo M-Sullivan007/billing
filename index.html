@@ -882,24 +882,25 @@ function renderEditJob() {
 async function saveEditJob(idx) {
   const j = DB.jobs.find(x=>x.index===idx);
   if(!j) return;
-  const g = id => document.getElementById(id);
+  const gv = (id, def='') => { const el = document.getElementById(id); return el ? el.value : def; };
+  const gc = (id) => { const el = document.getElementById(id); return el ? el.checked : false; };
 
   setContent('<div class="loading"><div class="spinner"></div> กำลังบันทึก...</div>');
   try {
     const updated = {
       ...j,
-      customer: g('ej-customer').value,
-      project: g('ej-project').value,
-      contact: g('ej-contact').value,
-      clientTaxId: g('ej-taxid').value,
-      address: g('ej-address').value,
-      status: g('ej-status').value,
-      billingStatus: g('ej-billing-status').value,
-      totalInstallments: parseInt(g('ej-installments').value)||0,
-      netReceived: g('ej-netreceived').value||'',
-      tuRac: g('ej-turac').checked,
-      needsBilling: g('ej-billing').checked,
-      note: g('ej-note').value,
+      customer: gv('ej-customer'),
+      project: gv('ej-project'),
+      contact: gv('ej-contact'),
+      clientTaxId: gv('ej-taxid'),
+      address: gv('ej-address'),
+      status: gv('ej-status','Active'),
+      billingStatus: gv('ej-billing-status',''),
+      totalInstallments: parseInt(gv('ej-installments','0'))||0,
+      netReceived: gv('ej-netreceived','')||'',
+      tuRac: gc('ej-turac'),
+      needsBilling: gc('ej-billing'),
+      note: gv('ej-note'),
     };
     // Write back to Excel — all 16 columns
     const row = [
@@ -1382,28 +1383,31 @@ async function updateDoc() {
   if(!items.length) { showToast('กรุณาเพิ่มรายการ','error'); return; }
 
   const sub = items.reduce((s,i)=>s+(i.qty*i.unit),0);
-  const uv = document.getElementById('f-vat').checked;
-  const wr = parseInt(document.getElementById('f-wht').value||0);
+  const vatEl = document.getElementById('f-vat');
+  const whtEl = document.getElementById('f-wht');
+  const uv = vatEl ? vatEl.checked : true;
+  const wr = whtEl ? parseInt(whtEl.value||0) : 0;
   const vat = uv?sub*0.07:0;
   const wht = sub*(wr/100);
   const net = sub+vat-wht;
 
+  const gv = (id, def='') => { const el = document.getElementById(id); return el ? el.value : def; };
+
   setContent('<div class="loading"><div class="spinner"></div> กำลังบันทึก...</div>');
   try {
     const row = doc._row;
-    const date = document.getElementById('f-date').value;
+    const date = gv('f-date', doc.date);
+    const instNo = gv('f-installment-no','');
+    const instStat = gv('f-installment-status','');
     const values = [
       doc.id, doc.docId, doc.type, doc.jobIndex, date,
-      document.getElementById('f-duedate')?.value||'',
-      document.getElementById('f-refdoc')?.value||'',
-      document.getElementById('f-project')?.value||'',
+      gv('f-duedate',''), gv('f-refdoc',''), gv('f-project',''),
       sub, vat, wr, wht, net,
-      document.getElementById('f-installment-no')?.value||'',
-      document.getElementById('f-installment-status')?.value||'',
+      instNo, instStat,
       JSON.stringify(items), doc.note
     ];
     if(row) await updateCell('Documents', `A${row}:Q${row}`, [values]);
-    Object.assign(doc, { date,items,subtotal:sub,vat,whtRate:wr,whtAmount:wht,netAmount:net });
+    Object.assign(doc, { date, items, subtotal:sub, vat, whtRate:wr, whtAmount:wht, netAmount:net, installmentNo:parseInt(instNo)||0, installmentStatus:instStat });
     showToast('บันทึกการแก้ไขสำเร็จ!');
     goBack();
   } catch(e) { showToast('บันทึกไม่สำเร็จ: '+e.message,'error'); }
