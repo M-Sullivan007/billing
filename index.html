@@ -196,7 +196,8 @@ select.form-input{cursor:pointer}
 @media print{
   body>*:not(#print-root){display:none!important}
   #print-root{display:block!important;font-family:'Sarabun',sans-serif;font-size:12px;color:#000;padding:0}
-  @page{size:A4;margin:12mm 16mm}
+  @page{size:A4;margin:12mm 16mm;marks:none}
+  @page{margin-header:0;margin-footer:0}
   .print-page{font-family:'Sarabun',sans-serif;font-size:10.5px;color:#000;page-break-after:avoid}
   .print-header-img{width:100%;display:block;margin-bottom:8px}
   .print-company{font-size:10px;margin-bottom:10px;line-height:1.6}
@@ -253,6 +254,7 @@ select.form-input{cursor:pointer}
     <div class="nav-item" onclick="nav('jobs')"><i class="ti ti-briefcase"></i> งานทั้งหมด</div>
     <div class="nav-item" onclick="nav('docs')"><i class="ti ti-files"></i> คลังเอกสาร</div>
     <div class="nav-item" onclick="nav('new-doc')"><i class="ti ti-file-plus"></i> ออกเอกสาร</div>
+    <div class="nav-item" onclick="nav('tracker')"><i class="ti ti-list-check"></i> ติดตามงาน</div>
     <div class="nav-section">ระบบ</div>
     <div class="nav-item" onclick="nav('settings')"><i class="ti ti-settings"></i> ตั้งค่า</div>
     <div class="sidebar-bottom">
@@ -615,6 +617,7 @@ function render() {
     'new-job': renderNewJob,
     'edit-doc': renderEditDoc,
     'edit-job': renderEditJob,
+    tracker: renderTracker,
     settings: renderSettings,
   };
   (pages[ST.page] || renderDashboard)();
@@ -748,7 +751,7 @@ function renderDashboard() {
         <div style="text-align:center;border-left:1px solid var(--border)">
           <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">INV</div>
           <div style="font-size:13px;font-weight:700;color:var(--text)">${fmtN(inv)}</div>
-          <div style="font-size:10px;color:var(--text-3)">TR: ${fmtN(tr)} ฿</div>
+          <div style="font-size:10px;color:var(--text-3)">รับเงินแล้ว: ${fmtN(tr)} ฿</div>
         </div>
         <div style="text-align:center;border-left:1px solid var(--border)">
           <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">ภาครัฐ</div>
@@ -1100,7 +1103,7 @@ function renderNewJob() {
         <div class="form-group full"><label class="form-label">ชื่อบริษัท / ลูกค้า <span class="req">*</span></label><input class="form-input" id="nj-customer" placeholder="บริษัท..."></div>
         <div class="form-group full"><label class="form-label">ชื่อโปรเจกต์ <span class="req">*</span></label><input class="form-input" id="nj-project" placeholder="ชื่อโครงการ..."></div>
         <div class="form-group"><label class="form-label">ผู้ติดต่อ</label><input class="form-input" id="nj-contact" placeholder="ชื่อผู้ติดต่อ"></div>
-        <div class="form-group"><label class="form-label">เลขประจำตัวผู้เสียภาษี</label><input class="form-input" id="nj-taxid" placeholder="0000000000000"></div>
+        <div class="form-group"><label class="form-label">เลขประจำตัวผู้เสียภาษี <span class="req">*</span></label><input class="form-input" id="nj-taxid" placeholder="0000000000000" maxlength="13"></div>
         <div class="form-group full"><label class="form-label">ที่อยู่</label><textarea class="form-input" id="nj-address" rows="2" placeholder="ที่อยู่ลูกค้า"></textarea></div>
       </div>
     </div>
@@ -1199,7 +1202,9 @@ async function saveNewJob() {
   const type = document.getElementById('nj-type').value;
   const customer = document.getElementById('nj-customer').value.trim();
   const project = document.getElementById('nj-project').value.trim();
+  const taxId = document.getElementById('nj-taxid').value.trim();
   if(!customer||!project) { showToast('กรุณากรอกชื่อลูกค้าและโปรเจกต์','error'); return; }
+  if(!taxId) { showToast('กรุณากรอกเลขประจำตัวผู้เสียภาษี','error'); return; }
 
   setContent('<div class="loading"><div class="spinner"></div> กำลังบันทึก...</div>');
   try {
@@ -1665,12 +1670,145 @@ function printDoc(docId) {
       </div>
     </div>`}
   </div>`;
-  setTimeout(() => { window.print(); pr.style.display='none'; }, 300);
+  setTimeout(() => {
+    // Tip for removing browser header/footer
+    const tip = document.createElement('div');
+    tip.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1A3A5C;color:#fff;padding:10px 18px;border-radius:8px;font-size:12px;z-index:9999;font-family:Sarabun,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,0.3)';
+    tip.innerHTML = '💡 เพื่อซ่อน URL และวันที่: เปิด "More settings" แล้วปิด "Headers and footers"';
+    document.body.appendChild(tip);
+    setTimeout(() => {
+      window.print();
+      pr.style.display='none';
+      tip.remove();
+    }, 1500);
+  }, 300);
 }
 
 // ═══════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════
+function renderTracker() {
+  document.getElementById('page-title').textContent = 'ติดตามงาน';
+  document.getElementById('topbar-right').innerHTML = '';
+
+  const SECTIONS = [
+    { key:'Declined',     label:'❌ Declined',              color:'#DC2626', bg:'#FEF2F2',  filter: j => j.status==='Declined' },
+    { key:'QT Pending',   label:'🕐 QT Pending — รอลูกค้าตอบ', color:'#B45309', bg:'#FEF3C7', filter: j => j.billingStatus==='QT Pending' },
+    { key:'QT Approved',  label:'✅ กำลังดำเนินการ',         color:'#1D4ED8', bg:'#EFF6FF',  filter: j => j.billingStatus==='QT Approved' },
+    { key:'INV Sent',     label:'📤 รอออก INV — งานเสร็จแล้ว', color:'#7C3AED', bg:'#F5F3FF', filter: j => j.billingStatus==='INV Sent'&&j.status!=='Done' },
+    { key:'Payment',      label:'💰 รอเก็บเงิน — ส่ง INV แล้ว', color:'#0369A1', bg:'#F0F9FF', filter: j => j.billingStatus==='Payment Received' },
+    { key:'TR',           label:'🧾 รอออก TR — ลูกค้าโอนแล้ว', color:'#065F46', bg:'#ECFDF5', filter: j => j.billingStatus==='TR Issued'&&j.status!=='Done' },
+    { key:'Done',         label:'🏁 Done — เสร็จสิ้น',        color:'#166534', bg:'#F0FDF4',  filter: j => j.status==='Done'||j.billingStatus==='Done' },
+  ];
+
+  const jobCard = (j) => {
+    const docs = getDocsByJob(j.index);
+    const qtAmt = docs.filter(d=>d.type==='QT')[0]?.subtotal||0;
+    const invCount = docs.filter(d=>d.type==='INV').length;
+    const trCount = docs.filter(d=>d.type==='TR').length;
+    return `<div onclick="openJob('${j.index}')" style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 14px;cursor:pointer;transition:all .15s" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='#fff'">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-size:11px;color:var(--text-3);font-family:monospace">${j.index}</div>
+          <div style="font-weight:600;font-size:13px;margin-top:2px">${j.customer}</div>
+          <div style="font-size:11px;color:var(--text-2);margin-top:1px">${j.project}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:12px">
+          <div style="font-size:13px;font-weight:600;color:var(--navy)">${qtAmt?fmtN(qtAmt)+' ฿':'-'}</div>
+          <div style="font-size:10px;color:var(--text-3);margin-top:2px">INV ${invCount} | TR ${trCount}</div>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  const sections = SECTIONS.map(s => {
+    const jobs = DB.jobs.filter(s.filter);
+    if(jobs.length === 0) return '';
+    return `<div style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <div style="font-size:13px;font-weight:600;color:${s.color}">${s.label}</div>
+        <span style="background:${s.bg};color:${s.color};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500">${jobs.length} งาน</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:8px">
+        ${jobs.map(jobCard).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Money Calculator
+  const calcJobs = DB.jobs.filter(j=>j.status!=='Declined');
+  const calcHtml = `<div class="card" style="margin-bottom:20px">
+    <div class="card-header">
+      <h2>💵 คำนวณยอดเงิน</h2>
+      <div style="font-size:12px;color:var(--text-3)">เลือกงานที่ต้องการรวมยอด</div>
+    </div>
+    <div style="padding:14px">
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="calcSelectAll(true)">เลือกทั้งหมด</button>
+        <button class="btn btn-outline btn-sm" onclick="calcSelectAll(false)">ยกเลิกทั้งหมด</button>
+        <button class="btn btn-outline btn-sm" onclick="calcSelectType('Advisory')">Advisory</button>
+        <button class="btn btn-outline btn-sm" onclick="calcSelectType('Learning')">Learning</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;max-height:280px;overflow-y:auto;padding:4px" id="calc-list">
+        ${calcJobs.map(j => {
+          const qt = getDocsByJob(j.index).filter(d=>d.type==='QT')[0]?.subtotal||0;
+          const nr = parseFloat(j.netReceived)||0;
+          const amt = (j.billingStatus==='No Billing'||j.tuRac) ? nr : qt;
+          return `<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);border-radius:6px;cursor:pointer;font-size:12px">
+            <input type="checkbox" class="calc-cb" data-amt="${amt}" data-type="${j.type}" onchange="updateCalcTotal()" style="flex-shrink:0">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${j.customer}</div>
+              <div style="font-size:10px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${j.index} · ${j.project}</div>
+            </div>
+            <div style="font-weight:600;color:var(--navy);flex-shrink:0">${amt?fmtN(amt):'-'} ฿</div>
+          </label>`;
+        }).join('')}
+      </div>
+      <div style="margin-top:14px;padding:14px;background:var(--navy);border-radius:10px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="color:rgba(255,255,255,0.6);font-size:11px">ยอดรวมที่เลือก</div>
+          <div style="color:#fff;font-size:22px;font-weight:700;margin-top:2px" id="calc-total">0.00 ฿</div>
+        </div>
+        <div style="text-align:right">
+          <div style="color:rgba(255,255,255,0.6);font-size:11px" id="calc-count">0 งาน</div>
+          <div style="color:rgba(255,255,255,0.5);font-size:10px;margin-top:2px" id="calc-breakdown"></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  setContent(calcHtml + (sections || '<div class="empty-state"><i class="ti ti-check"></i><p>ไม่มีงานที่ต้องติดตาม</p></div>'));
+}
+
+function updateCalcTotal() {
+  const cbs = document.querySelectorAll('.calc-cb:checked');
+  let total = 0, adv = 0, lrn = 0;
+  cbs.forEach(cb => {
+    const amt = parseFloat(cb.dataset.amt)||0;
+    total += amt;
+    if(cb.dataset.type==='Advisory') adv += amt;
+    else lrn += amt;
+  });
+  const t = document.getElementById('calc-total');
+  const c = document.getElementById('calc-count');
+  const b = document.getElementById('calc-breakdown');
+  if(t) t.textContent = fmtN(total) + ' ฿';
+  if(c) c.textContent = cbs.length + ' งาน';
+  if(b) b.textContent = `Advisory: ${fmtN(adv)} · Learning: ${fmtN(lrn)}`;
+}
+
+function calcSelectAll(checked) {
+  document.querySelectorAll('.calc-cb').forEach(cb => cb.checked = checked);
+  updateCalcTotal();
+}
+
+function calcSelectType(type) {
+  document.querySelectorAll('.calc-cb').forEach(cb => {
+    cb.checked = cb.dataset.type === type;
+  });
+  updateCalcTotal();
+}
+
 function renderSettings() {
   document.getElementById('page-title').textContent = 'ตั้งค่าระบบ';
   document.getElementById('topbar-right').innerHTML = '';
