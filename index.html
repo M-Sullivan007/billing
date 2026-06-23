@@ -676,9 +676,25 @@ function renderDashboard() {
   const lrnJobs = DB.jobs.filter(j=>j.type==='Learning');
   const activeJobs = DB.jobs.filter(j=>j.status==='Active');
 
-  const sumDocs = (type) => DB.docs.filter(d=>d.type===type&&d.type!=='QQ').reduce((s,d)=>s+d.subtotal,0);
-  const sumINV = sumDocs('INV');
-  const sumTR = sumDocs('TR');
+  // Confirmed amount = QT of Active/Done jobs + net_received of No Billing jobs
+  const confirmedAmount = (jobs) => {
+    let total = 0;
+    for(const j of jobs) {
+      if(j.status==='Active'||j.status==='Done') {
+        if(j.billingStatus==='No Billing'||j.tuRac) {
+          // Government projects - use net_received
+          total += parseFloat(j.netReceived)||0;
+        } else {
+          // Private projects - use first QT amount
+          const qts = DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='QT');
+          if(qts.length>0) total += qts[0].subtotal||0;
+        }
+      }
+    }
+    return total;
+  };
+  const sumINV = DB.docs.filter(d=>d.type==='INV').reduce((s,d)=>s+d.subtotal,0);
+  const sumTR = DB.docs.filter(d=>d.type==='TR').reduce((s,d)=>s+d.subtotal,0);
 
   // Jobs needing action (Active + billing not Done/No Billing)
   const actionJobs = DB.jobs.filter(j=>j.status==='Active'&&j.billingStatus&&j.billingStatus!=='Done'&&j.billingStatus!=='No Billing');
@@ -687,29 +703,36 @@ function renderDashboard() {
   const sectionSummary = (jobs, label, color) => {
     const active = jobs.filter(j=>j.status==='Active').length;
     const done = jobs.filter(j=>j.status==='Done').length;
-    const qt = DB.docs.filter(d=>d.type==='QT'&&jobs.find(j=>j.index===d.jobIndex)).reduce((s,d)=>s+d.subtotal,0);
+    const declined = jobs.filter(j=>j.status==='Declined').length;
+    const confirmed = confirmedAmount(jobs);
     const inv = DB.docs.filter(d=>d.type==='INV'&&jobs.find(j=>j.index===d.jobIndex)).reduce((s,d)=>s+d.subtotal,0);
     const tr = DB.docs.filter(d=>d.type==='TR'&&jobs.find(j=>j.index===d.jobIndex)).reduce((s,d)=>s+d.subtotal,0);
+    const noBilling = jobs.filter(j=>j.billingStatus==='No Billing'||j.tuRac).length;
     return `<div class="card" style="border-top:3px solid ${color}">
       <div class="card-header">
         <h2 style="color:${color}">${label}</h2>
         <span class="badge" style="background:${color}22;color:${color}">${jobs.length} งาน</span>
       </div>
-      <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
         <div style="text-align:center">
-          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">Active</div>
-          <div style="font-size:22px;font-weight:700;color:var(--text)">${active}</div>
-          <div style="font-size:10px;color:var(--text-3)">Done: ${done}</div>
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">งาน</div>
+          <div style="font-size:20px;font-weight:700;color:var(--text)">${active}</div>
+          <div style="font-size:10px;color:var(--text-3)">Active | Done: ${done} | Declined: ${declined}</div>
         </div>
-        <div style="text-align:center;border-left:1px solid var(--border);border-right:1px solid var(--border)">
-          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">QT</div>
-          <div style="font-size:14px;font-weight:700;color:var(--text)">${fmtN(qt)}</div>
-          <div style="font-size:10px;color:var(--text-3)">฿</div>
+        <div style="text-align:center;border-left:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">ยืนยันแล้ว</div>
+          <div style="font-size:13px;font-weight:700;color:${color}">${fmtN(confirmed)}</div>
+          <div style="font-size:10px;color:var(--text-3)">฿ (Active+Done)</div>
         </div>
-        <div style="text-align:center">
-          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">INV / TR</div>
-          <div style="font-size:14px;font-weight:700;color:var(--text)">${fmtN(inv)}</div>
+        <div style="text-align:center;border-left:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">INV</div>
+          <div style="font-size:13px;font-weight:700;color:var(--text)">${fmtN(inv)}</div>
           <div style="font-size:10px;color:var(--text-3)">TR: ${fmtN(tr)} ฿</div>
+        </div>
+        <div style="text-align:center;border-left:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">ภาครัฐ</div>
+          <div style="font-size:20px;font-weight:700;color:var(--text)">${noBilling}</div>
+          <div style="font-size:10px;color:var(--text-3)">งาน No Billing</div>
         </div>
       </div>
     </div>`;
@@ -883,32 +906,42 @@ async function saveEditJob(idx) {
   const j = DB.jobs.find(x=>x.index===idx);
   if(!j) return;
   const gv = (id, def='') => { const el = document.getElementById(id); return el ? el.value : def; };
-  const gc = (id) => { const el = document.getElementById(id); return el ? el.checked : false; };
+  const gc = (id, def=false) => { const el = document.getElementById(id); return el ? el.checked : def; };
+
+  // Read new values — fall back to existing if field not found
+  const updated = {
+    ...j,
+    customer:          gv('ej-customer',          j.customer),
+    project:           gv('ej-project',           j.project),
+    contact:           gv('ej-contact',           j.contact),
+    clientTaxId:       gv('ej-taxid',             j.clientTaxId),
+    address:           gv('ej-address',           j.address),
+    status:            gv('ej-status',            j.status||'Active'),
+    billingStatus:     gv('ej-billing-status',    j.billingStatus||''),
+    totalInstallments: parseInt(gv('ej-installments', j.totalInstallments||0))||0,
+    netReceived:       gv('ej-netreceived',       j.netReceived||''),
+    tuRac:             gc('ej-turac',             j.tuRac),
+    needsBilling:      gc('ej-billing',           j.needsBilling),
+    note:              gv('ej-note',              j.note),
+  };
+
+  // Validate required fields before saving
+  if(!updated.customer || !updated.project) {
+    showToast('ชื่อลูกค้าและโปรเจกต์ต้องไม่ว่าง','error');
+    return;
+  }
+
+  const confirmSave = confirm(`บันทึกการแก้ไขงาน ${idx}?\nลูกค้า: ${updated.customer}\nโปรเจกต์: ${updated.project}`);
+  if(!confirmSave) return;
 
   setContent('<div class="loading"><div class="spinner"></div> กำลังบันทึก...</div>');
   try {
-    const updated = {
-      ...j,
-      customer: gv('ej-customer'),
-      project: gv('ej-project'),
-      contact: gv('ej-contact'),
-      clientTaxId: gv('ej-taxid'),
-      address: gv('ej-address'),
-      status: gv('ej-status','Active'),
-      billingStatus: gv('ej-billing-status',''),
-      totalInstallments: parseInt(gv('ej-installments','0'))||0,
-      netReceived: gv('ej-netreceived','')||'',
-      tuRac: gc('ej-turac'),
-      needsBilling: gc('ej-billing'),
-      note: gv('ej-note'),
-    };
-    // Write back to Excel — all 16 columns
     const row = [
-      updated.id, updated.year, updated.type, updated.index,
-      updated.customer, updated.project, updated.contact, updated.address,
-      updated.clientTaxId, updated.needsBilling, updated.tuRac,
-      updated.netReceived, updated.status, updated.billingStatus,
-      updated.totalInstallments||'', updated.note
+      updated.id||j.id, updated.year||j.year, updated.type||j.type, updated.index||j.index,
+      updated.customer, updated.project, updated.contact||'', updated.address||'',
+      updated.clientTaxId||'', updated.needsBilling, updated.tuRac,
+      updated.netReceived||'', updated.status, updated.billingStatus||'',
+      updated.totalInstallments||'', updated.note||''
     ];
     if(j._row) await updateCell('Jobs', `A${j._row}:P${j._row}`, [row]);
     Object.assign(j, updated);
