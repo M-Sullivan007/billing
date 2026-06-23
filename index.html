@@ -4,8 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>M&S Sullivan — Billing System</title>
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
-<script>window.msalReady = false;</script>
+<script src="https://unpkg.com/@azure/msal-browser@3.10.0/lib/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=IBM+Plex+Sans+Thai:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css" rel="stylesheet">
@@ -312,8 +311,13 @@ let accessToken = null;
 
 async function initMsal() {
   if(msalApp) return;
-  msalApp = new msal.PublicClientApplication(msalConfig);
-  await msalApp.initialize();
+  // Support both msal v2 (msal.PublicClientApplication) and v3 (msalBrowser.PublicClientApplication)
+  const PCA = (typeof msal !== 'undefined' && msal.PublicClientApplication)
+    ? msal.PublicClientApplication
+    : (typeof msalBrowser !== 'undefined' ? msalBrowser.PublicClientApplication : null);
+  if(!PCA) throw new Error('MSAL library not loaded');
+  msalApp = new PCA(msalConfig);
+  if(msalApp.initialize) await msalApp.initialize();
 }
 
 async function signIn() {
