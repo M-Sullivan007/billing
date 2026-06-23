@@ -483,7 +483,9 @@ async function loadAllData() {
         address: r[7]||'', clientTaxId: r[8]||'',
         needsBilling: r[9]===true||r[9]==='TRUE'||r[9]===1,
         tuRac: r[10]===true||r[10]==='TRUE'||r[10]===1,
-        netReceived: r[11]||'', status: r[12]||'Active', note: r[13]||'',
+        netReceived: r[11]||'', status: r[12]||'Active',
+        billingStatus: r[13]||'', totalInstallments: parseInt(r[14])||0,
+        note: r[15]||'',
         _row: i+1
       });
     }
@@ -499,7 +501,8 @@ async function loadAllData() {
         project: r[7]||'', subtotal: parseFloat(r[8])||0,
         vat: parseFloat(r[9])||0, whtRate: parseInt(r[10])||0,
         whtAmount: parseFloat(r[11])||0, netAmount: parseFloat(r[12])||0,
-        note: r[13]||'', items: tryParse(r[14]),
+        installmentNo: parseInt(r[13])||0, installmentStatus: r[14]||'',
+        items: tryParse(r[15]), note: r[16]||'',
         _row: i+1
       });
     }
@@ -604,6 +607,7 @@ function render() {
     'new-doc': renderNewDoc,
     'new-job': renderNewJob,
     'edit-doc': renderEditDoc,
+    'edit-job': renderEditJob,
     settings: renderSettings,
   };
   (pages[ST.page] || renderDashboard)();
@@ -649,44 +653,113 @@ function numThai(n) {
 // ═══════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════
+const BILLING_STATUS_COLORS = {
+  'No Billing':        {bg:'#F1F5F9',color:'#64748B'},
+  'QT Pending':        {bg:'#FEF9C3',color:'#854D0E'},
+  'QT Approved':       {bg:'#DCFCE7',color:'#166534'},
+  'INV Sent':          {bg:'#DBEAFE',color:'#1E40AF'},
+  'Payment Received':  {bg:'#EDE9FE',color:'#5B21B6'},
+  'TR Issued':         {bg:'#D1FAE5',color:'#065F46'},
+  'Done':              {bg:'#F0FDF4',color:'#15803D'},
+};
+
+function billingBadge(s) {
+  const c = BILLING_STATUS_COLORS[s] || {bg:'#F1F5F9',color:'#64748B'};
+  return `<span class="badge" style="background:${c.bg};color:${c.color}">${s||'-'}</span>`;
+}
+
 function renderDashboard() {
   document.getElementById('page-title').textContent = 'Dashboard';
   document.getElementById('topbar-right').innerHTML = `<button class="btn btn-primary btn-sm" onclick="nav('new-doc')"><i class="ti ti-file-plus"></i> ออกเอกสาร</button>`;
 
-  const advJobs = DB.jobs.filter(j => j.type==='Advisory');
-  const lrnJobs = DB.jobs.filter(j => j.type==='Learning');
-  const pendingQT = DB.docs.filter(d => d.type==='QT' && !DB.docs.find(x => x.jobIndex===d.jobIndex && x.type==='INV'));
-  const totalQT = DB.docs.filter(d=>d.type==='QT').reduce((s,d)=>s+d.subtotal,0);
-  const totalINV = DB.docs.filter(d=>d.type==='INV').reduce((s,d)=>s+d.subtotal,0);
+  const advJobs = DB.jobs.filter(j=>j.type==='Advisory');
+  const lrnJobs = DB.jobs.filter(j=>j.type==='Learning');
+  const activeJobs = DB.jobs.filter(j=>j.status==='Active');
 
-  const jobRows = job => {
-    const docs = getDocsByJob(job.index);
-    const types = [...new Set(docs.map(d=>d.type))];
-    const tot = docs.filter(d=>d.type!=='QQ').reduce((s,d)=>s+d.netAmount,0);
-    return `<tr onclick="openJob('${job.index}')">
-      <td><div style="font-weight:500">${job.customer}</div><div class="muted" style="font-size:11px;margin-top:2px">${job.project}</div></td>
-      <td><span class="badge ${job.type==='Advisory'?'badge-advisory':'badge-learning'}">${job.type}</span></td>
-      <td>${types.map(t=>`<span class="badge ${tBadge(t)}">${t}</span>`).join(' ')}</td>
-      <td class="amount">${tot?fmtN(tot)+' ฿':'-'}</td>
-      <td>${statusBadge(job.status)}</td>
+  const sumDocs = (type) => DB.docs.filter(d=>d.type===type&&d.type!=='QQ').reduce((s,d)=>s+d.subtotal,0);
+  const sumINV = sumDocs('INV');
+  const sumTR = sumDocs('TR');
+
+  // Jobs needing action (Active + billing not Done/No Billing)
+  const actionJobs = DB.jobs.filter(j=>j.status==='Active'&&j.billingStatus&&j.billingStatus!=='Done'&&j.billingStatus!=='No Billing');
+
+  // Section summary
+  const sectionSummary = (jobs, label, color) => {
+    const active = jobs.filter(j=>j.status==='Active').length;
+    const done = jobs.filter(j=>j.status==='Done').length;
+    const qt = DB.docs.filter(d=>d.type==='QT'&&jobs.find(j=>j.index===d.jobIndex)).reduce((s,d)=>s+d.subtotal,0);
+    const inv = DB.docs.filter(d=>d.type==='INV'&&jobs.find(j=>j.index===d.jobIndex)).reduce((s,d)=>s+d.subtotal,0);
+    const tr = DB.docs.filter(d=>d.type==='TR'&&jobs.find(j=>j.index===d.jobIndex)).reduce((s,d)=>s+d.subtotal,0);
+    return `<div class="card" style="border-top:3px solid ${color}">
+      <div class="card-header">
+        <h2 style="color:${color}">${label}</h2>
+        <span class="badge" style="background:${color}22;color:${color}">${jobs.length} งาน</span>
+      </div>
+      <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+        <div style="text-align:center">
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">Active</div>
+          <div style="font-size:22px;font-weight:700;color:var(--text)">${active}</div>
+          <div style="font-size:10px;color:var(--text-3)">Done: ${done}</div>
+        </div>
+        <div style="text-align:center;border-left:1px solid var(--border);border-right:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">QT</div>
+          <div style="font-size:14px;font-weight:700;color:var(--text)">${fmtN(qt)}</div>
+          <div style="font-size:10px;color:var(--text-3)">฿</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">INV / TR</div>
+          <div style="font-size:14px;font-weight:700;color:var(--text)">${fmtN(inv)}</div>
+          <div style="font-size:10px;color:var(--text-3)">TR: ${fmtN(tr)} ฿</div>
+        </div>
+      </div>
+    </div>`;
+  };
+
+  const actionRow = j => {
+    const docs = getDocsByJob(j.index);
+    const lastDoc = docs.filter(d=>d.type!=='QQ').sort((a,b)=>b.date.localeCompare(a.date))[0];
+    return `<tr onclick="openJob('${j.index}')">
+      <td class="mono" style="font-size:11px">${j.index}</td>
+      <td><div style="font-weight:500;font-size:12px">${j.customer}</div><div style="font-size:11px;color:var(--text-3)">${j.project}</div></td>
+      <td><span class="badge ${j.type==='Advisory'?'badge-advisory':'badge-learning'}">${j.type}</span></td>
+      <td>${billingBadge(j.billingStatus)}</td>
+      <td style="font-size:11px;color:var(--text-3)">${lastDoc?fmtD(lastDoc.date):'-'}</td>
     </tr>`;
   };
 
   setContent(`
-  <div class="stats-grid">
-    <div class="stat-card advisory"><div class="stat-label">Advisory</div><div class="stat-value">${advJobs.length}</div><div class="stat-sub">${advJobs.filter(j=>j.status==='Active').length} งาน Active</div></div>
-    <div class="stat-card learning"><div class="stat-label">Learning</div><div class="stat-value">${lrnJobs.length}</div><div class="stat-sub">${lrnJobs.filter(j=>j.status==='Active').length} งาน Active</div></div>
-    <div class="stat-card docs"><div class="stat-label">มูลค่า QT ทั้งหมด</div><div class="stat-value" style="font-size:18px">${fmtN(totalQT)}</div><div class="stat-sub">฿ | ${DB.docs.filter(d=>d.type==='QT').length} ใบ</div></div>
-    <div class="stat-card pending"><div class="stat-label">รอเก็บเงิน (QT→INV)</div><div class="stat-value">${pendingQT.length}</div><div class="stat-sub">งานที่ออก QT แล้วยังไม่มี INV</div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
+    ${sectionSummary(advJobs,'Advisory','#2D8A5E')}
+    ${sectionSummary(lrnJobs,'Learning','#1A5C8A')}
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+    <div class="stat-card" style="border-top:3px solid var(--navy)">
+      <div class="stat-label">งาน Active ทั้งหมด</div>
+      <div class="stat-value">${activeJobs.length}</div>
+      <div class="stat-sub">จาก ${DB.jobs.length} งาน</div>
+    </div>
+    <div class="stat-card" style="border-top:3px solid var(--gold)">
+      <div class="stat-label">มูลค่า INV รวม</div>
+      <div class="stat-value" style="font-size:18px">${fmtN(sumINV)}</div>
+      <div class="stat-sub">฿</div>
+    </div>
+    <div class="stat-card" style="border-top:3px solid var(--green)">
+      <div class="stat-label">มูลค่า TR รวม (รับแล้ว)</div>
+      <div class="stat-value" style="font-size:18px">${fmtN(sumTR)}</div>
+      <div class="stat-sub">฿</div>
+    </div>
   </div>
   <div class="card">
-    <div class="card-header"><h2>งานทั้งหมด</h2><button class="btn btn-outline btn-sm" onclick="nav('jobs')">ดูทั้งหมด <i class="ti ti-arrow-right"></i></button></div>
-    <div class="table-wrap">
-    <table class="table">
-      <thead><tr><th>ลูกค้า / โปรเจกต์</th><th>ประเภท</th><th>เอกสาร</th><th class="right">มูลค่าสุทธิ</th><th>สถานะ</th></tr></thead>
-      <tbody>${DB.jobs.length ? DB.jobs.slice(0,10).map(jobRows).join('') : '<tr><td colspan="5" class="empty-state"><i class="ti ti-inbox"></i><p>ยังไม่มีงาน</p></td></tr>'}</tbody>
-    </table>
+    <div class="card-header">
+      <h2>⚡ งานที่ต้องติดตาม (${actionJobs.length})</h2>
+      <button class="btn btn-outline btn-sm" onclick="nav('jobs')">ดูทั้งหมด <i class="ti ti-arrow-right"></i></button>
     </div>
+    ${actionJobs.length===0
+      ? '<div class="empty-state"><i class="ti ti-circle-check"></i><p>ไม่มีงานที่ต้องติดตามตอนนี้</p></div>'
+      : `<div class="table-wrap"><table class="table">
+          <thead><tr><th>Index</th><th>ลูกค้า / โปรเจกต์</th><th>ประเภท</th><th>Billing Status</th><th>เอกสารล่าสุด</th></tr></thead>
+          <tbody>${actionJobs.map(actionRow).join('')}</tbody>
+        </table></div>`}
   </div>`);
 }
 
@@ -704,12 +777,13 @@ function renderJobs() {
     const docs = getDocsByJob(j.index);
     const tot = docs.filter(d=>d.type!=='QQ').reduce((s,d)=>s+d.netAmount,0);
     return `<tr onclick="openJob('${j.index}')">
-      <td class="mono">${j.index}</td>
+      <td class="mono" style="font-size:11px">${j.index}</td>
       <td><div style="font-weight:500">${j.customer}</div><div class="muted" style="font-size:11px;margin-top:1px">${j.project}</div></td>
-      <td class="muted">${j.contact||'-'}</td>
+      <td class="muted" style="font-size:11px">${j.contact||'-'}</td>
       <td>${docs.length} ใบ</td>
       <td class="amount">${tot?fmtN(tot)+' ฿':'-'}</td>
       <td>${statusBadge(j.status)}</td>
+      <td>${billingBadge(j.billingStatus)}</td>
       <td>${j.tuRac?'<span class="badge" style="background:#FEF9C3;color:#854D0E">TU-RAC</span>':''}</td>
     </tr>`;
   };
@@ -724,7 +798,7 @@ function renderJobs() {
       <div class="card">
         <div class="table-wrap">
         <table class="table">
-          <thead><tr><th>Index</th><th>ลูกค้า / โปรเจกต์</th><th>ผู้ติดต่อ</th><th>เอกสาร</th><th class="right">มูลค่าสุทธิ</th><th>สถานะ</th><th></th></tr></thead>
+          <thead><tr><th>Index</th><th>ลูกค้า / โปรเจกต์</th><th>ผู้ติดต่อ</th><th>เอกสาร</th><th class="right">มูลค่าสุทธิ</th><th>สถานะ</th><th>Billing Status</th><th></th></tr></thead>
           <tbody>${jobs.map(jobRow).join('')}</tbody>
         </table>
         </div>
@@ -734,8 +808,115 @@ function renderJobs() {
   setContent(
     section('Advisory — งาน Consult', advJobs, 'var(--green)') +
     section('Learning — งาน Training', lrnJobs, 'var(--navy-light)') +
-    (DB.jobs.length===0?'<div class="empty-state"><i class="ti ti-briefcase"></i><p>ยังไม่มีงาน กด "เพิ่มงานใหม่" ได้เลย</p></div>':'')
+    (DB.jobs.length===0?'<div class="empty-state"><i class="ti ti-briefcase"></i><p>ยังไม่มีงาน</p></div>':'')
   );
+}
+
+function renderEditJob() {
+  const j = DB.jobs.find(x=>x.index===ST.editJobIdx);
+  if(!j) { goBack(); return; }
+  document.getElementById('page-title').textContent = `แก้ไขงาน: ${j.index}`;
+  document.getElementById('topbar-right').innerHTML = '';
+
+  const BILLING_OPTS = ['QT Pending','QT Approved','INV Sent','Payment Received','TR Issued','Done','No Billing'];
+  const STATUS_OPTS = ['Active','Done','Declined'];
+
+  setContent(`
+  <div class="card">
+    <div class="card-header"><h2>แก้ไขงาน: ${j.index} — ${j.customer}</h2></div>
+    <div class="card-body">
+    <div class="form-section">
+      <div class="form-section-title">ข้อมูลงาน</div>
+      <div class="form-grid">
+        <div class="form-group full"><label class="form-label">ชื่อบริษัท / ลูกค้า</label><input class="form-input" id="ej-customer" value="${j.customer||''}"></div>
+        <div class="form-group full"><label class="form-label">ชื่อโปรเจกต์</label><input class="form-input" id="ej-project" value="${j.project||''}"></div>
+        <div class="form-group"><label class="form-label">ผู้ติดต่อ</label><input class="form-input" id="ej-contact" value="${j.contact||''}"></div>
+        <div class="form-group"><label class="form-label">เลขประจำตัวผู้เสียภาษี</label><input class="form-input" id="ej-taxid" value="${j.clientTaxId||''}"></div>
+        <div class="form-group full"><label class="form-label">ที่อยู่</label><textarea class="form-input" id="ej-address" rows="2">${j.address||''}</textarea></div>
+      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-title">สถานะ</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Job Status</label>
+          <select class="form-input" id="ej-status">
+            ${STATUS_OPTS.map(s=>`<option value="${s}" ${j.status===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Billing Status</label>
+          <select class="form-input" id="ej-billing-status">
+            ${BILLING_OPTS.map(s=>`<option value="${s}" ${j.billingStatus===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">จำนวนงวดทั้งหมด</label>
+          <input class="form-input" type="number" id="ej-installments" value="${j.totalInstallments||''}" placeholder="เช่น 3">
+        </div>
+        <div class="form-group">
+          <label class="form-label">ยอดที่ได้จริง (หลัง TU-RAC)</label>
+          <input class="form-input" type="number" id="ej-netreceived" value="${j.netReceived||''}" placeholder="0.00">
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="ej-turac" ${j.tuRac?'checked':''}> ผ่าน TU-RAC (หัก 10%)
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="ej-billing" ${j.needsBilling?'checked':''}> ต้องออก Billing
+          </label>
+        </div>
+        <div class="form-group full"><label class="form-label">Note</label><textarea class="form-input" id="ej-note" rows="2">${j.note||''}</textarea></div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
+      <button class="btn btn-outline" onclick="goBack()">ยกเลิก</button>
+      <button class="btn btn-primary" onclick="saveEditJob('${j.index}')"><i class="ti ti-device-floppy"></i> บันทึก</button>
+    </div>
+    </div>
+  </div>`);
+}
+
+async function saveEditJob(idx) {
+  const j = DB.jobs.find(x=>x.index===idx);
+  if(!j) return;
+  const g = id => document.getElementById(id);
+
+  setContent('<div class="loading"><div class="spinner"></div> กำลังบันทึก...</div>');
+  try {
+    const updated = {
+      ...j,
+      customer: g('ej-customer').value,
+      project: g('ej-project').value,
+      contact: g('ej-contact').value,
+      clientTaxId: g('ej-taxid').value,
+      address: g('ej-address').value,
+      status: g('ej-status').value,
+      billingStatus: g('ej-billing-status').value,
+      totalInstallments: parseInt(g('ej-installments').value)||0,
+      netReceived: g('ej-netreceived').value||'',
+      tuRac: g('ej-turac').checked,
+      needsBilling: g('ej-billing').checked,
+      note: g('ej-note').value,
+    };
+    // Write back to Excel — all 16 columns
+    const row = [
+      updated.id, updated.year, updated.type, updated.index,
+      updated.customer, updated.project, updated.contact, updated.address,
+      updated.clientTaxId, updated.needsBilling, updated.tuRac,
+      updated.netReceived, updated.status, updated.billingStatus,
+      updated.totalInstallments||'', updated.note
+    ];
+    if(j._row) await updateCell('Jobs', `A${j._row}:P${j._row}`, [row]);
+    Object.assign(j, updated);
+    showToast('บันทึกสำเร็จ!');
+    ST.curJob = idx;
+    ST.page = 'job-detail';
+    ST.hist = [];
+    render();
+  } catch(e) { showToast('บันทึกไม่สำเร็จ: '+e.message,'error'); }
 }
 
 function openJob(idx) {
@@ -751,7 +932,9 @@ function renderJobDetail() {
   const j = DB.jobs.find(x=>x.index===ST.curJob);
   if(!j) { nav('jobs'); return; }
   document.getElementById('page-title').textContent = j.customer.substring(0,30);
-  document.getElementById('topbar-right').innerHTML = `<button class="btn btn-primary" onclick="newDocForJob('${j.index}')"><i class="ti ti-file-plus"></i> ออกเอกสาร</button>`;
+  document.getElementById('topbar-right').innerHTML = `
+    <button class="btn btn-outline btn-sm" onclick="openEditJob('${j.index}')" style="margin-right:6px"><i class="ti ti-edit"></i> แก้ไขงาน</button>
+    <button class="btn btn-primary" onclick="newDocForJob('${j.index}')"><i class="ti ti-file-plus"></i> ออกเอกสาร</button>`;
 
   const docs = getDocsByJob(j.index);
   const docRow = d => `<tr onclick="editDocPage('${d.docId}');event.stopPropagation()">
@@ -759,40 +942,62 @@ function renderJobDetail() {
     <td class="mono" style="font-weight:500">${d.docId}</td>
     <td class="muted">${fmtD(d.date)}</td>
     <td class="muted">${d.refDocId||'-'}</td>
+    <td style="font-size:11px">${d.installmentNo?`งวด ${d.installmentNo}`:'-'}</td>
+    <td>${d.installmentStatus?`<span class="badge" style="background:#F1F5F9;color:#475569;font-size:10px">${d.installmentStatus}</span>`:'-'}</td>
     <td class="amount">${fmtN(d.netAmount)} ฿</td>
-    <td onclick="event.stopPropagation()">
-      <button class="btn-ghost btn-xs" onclick="printDoc('${d.docId}')"><i class="ti ti-printer"></i></button>
+    <td onclick="event.stopPropagation()" style="white-space:nowrap">
+      <button class="btn-ghost btn-xs" onclick="editDocPage('${d.docId}');event.stopPropagation()"><i class="ti ti-edit"></i></button>
+      <button class="btn-ghost btn-xs" onclick="printDoc('${d.docId}');event.stopPropagation()"><i class="ti ti-printer"></i></button>
     </td>
   </tr>`;
+
+  const totalNet = docs.filter(d=>d.type!=='QQ').reduce((s,d)=>s+d.netAmount,0);
+  const totalTR = docs.filter(d=>d.type==='TR').reduce((s,d)=>s+d.subtotal,0);
 
   setContent(`
   <div class="card" style="margin-bottom:16px">
     <div class="card-header">
       <h2><i class="ti ti-briefcase" style="margin-right:6px;opacity:.6"></i>${j.customer}</h2>
-      <span class="badge ${j.type==='Advisory'?'badge-advisory':'badge-learning'}">${j.type}</span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span class="badge ${j.type==='Advisory'?'badge-advisory':'badge-learning'}">${j.type}</span>
+        ${statusBadge(j.status)}
+        ${billingBadge(j.billingStatus)}
+      </div>
     </div>
     <div class="card-body">
       <div class="form-grid">
-        <div><div class="form-label">Index</div><div class="mono" style="margin-top:3px">${j.index}</div></div>
-        <div><div class="form-label">สถานะ</div><div style="margin-top:3px">${statusBadge(j.status)}</div></div>
+        <div><div class="form-label">Index</div><div class="mono" style="margin-top:3px;font-weight:600">${j.index}</div></div>
+        <div><div class="form-label">จำนวนงวดทั้งหมด</div><div style="margin-top:3px">${j.totalInstallments||'-'} งวด</div></div>
         <div class="full"><div class="form-label">โปรเจกต์</div><div style="margin-top:3px;font-weight:500">${j.project}</div></div>
         <div><div class="form-label">ผู้ติดต่อ</div><div style="margin-top:3px">${j.contact||'-'}</div></div>
         <div><div class="form-label">เลขภาษีลูกค้า</div><div style="margin-top:3px">${j.clientTaxId||'-'}</div></div>
         <div class="full"><div class="form-label">ที่อยู่</div><div style="margin-top:3px">${j.address||'-'}</div></div>
-        ${j.tuRac?`<div><div class="form-label">TU-RAC (10%)</div><div style="margin-top:3px"><span class="badge" style="background:#FEF9C3;color:#854D0E">ผ่าน TU-RAC</span></div></div>`:''}
-        ${j.netReceived?`<div><div class="form-label">ยอดที่ได้จริง</div><div style="margin-top:3px;font-weight:600;color:var(--green)">${fmtN(j.netReceived)} ฿</div></div>`:''}
-        ${j.note?`<div class="full"><div class="form-label">Note</div><div style="margin-top:3px">${j.note}</div></div>`:''}
+        ${j.tuRac?`<div><div class="form-label">TU-RAC</div><div style="margin-top:3px"><span class="badge" style="background:#FEF9C3;color:#854D0E">ผ่าน TU-RAC (หัก 10%)</span></div></div>`:''}
+        <div><div class="form-label">ยอดที่ได้จริง (หลัง TU-RAC)</div><div style="margin-top:3px;font-weight:600;color:var(--green)">${j.netReceived?fmtN(j.netReceived)+' ฿':'-'}</div></div>
+        <div><div class="form-label">ยอด TR รวม</div><div style="margin-top:3px;font-weight:600;color:var(--navy)">${fmtN(totalTR)} ฿</div></div>
+        ${j.note?`<div class="full"><div class="form-label">Note</div><div style="margin-top:3px;color:var(--text-2)">${j.note}</div></div>`:''}
       </div>
     </div>
   </div>
   <div class="card">
-    <div class="card-header"><h2>เอกสารของงานนี้ (${docs.length} ใบ)</h2></div>
+    <div class="card-header">
+      <h2>เอกสารของงานนี้ (${docs.length} ใบ)</h2>
+      <div style="font-size:12px;color:var(--text-3)">มูลค่าสุทธิรวม: <strong style="color:var(--text)">${fmtN(totalNet)} ฿</strong></div>
+    </div>
     ${docs.length===0?'<div class="empty-state"><i class="ti ti-file-off"></i><p>ยังไม่มีเอกสาร</p></div>':
     `<div class="table-wrap"><table class="table">
-      <thead><tr><th>ประเภท</th><th>เลขที่</th><th>วันที่</th><th>อ้างอิง</th><th class="right">สุทธิ</th><th></th></tr></thead>
+      <thead><tr><th>ประเภท</th><th>เลขที่</th><th>วันที่</th><th>อ้างอิง</th><th>งวด</th><th>สถานะงวด</th><th class="right">สุทธิ</th><th></th></tr></thead>
       <tbody>${docs.map(docRow).join('')}</tbody>
     </table></div>`}
   </div>`);
+}
+
+function openEditJob(idx) {
+  ST.editJobIdx = idx;
+  ST.hist.push(ST.page);
+  ST.page = 'edit-job';
+  document.getElementById('back-btn').style.display = 'flex';
+  render();
 }
 
 // ═══════════════════════════════════════════════════
@@ -1021,7 +1226,7 @@ function renderDocForm(doc) {
       </table>
       <button class="btn btn-outline btn-sm" onclick="addItemRow()"><i class="ti ti-plus"></i> เพิ่มรายการ</button>
     </div>
-    <div style="display:flex;gap:20px;margin-bottom:16px">
+    <div style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
       <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer"><input type="checkbox" id="f-vat" ${!doc||doc.vat>0?'checked':''} onchange="calcTotals()"> VAT 7%</label>
       <div style="display:flex;align-items:center;gap:7px;font-size:13px">
         หัก ณ ที่จ่าย:
@@ -1029,6 +1234,20 @@ function renderDocForm(doc) {
           <option value="0" ${doc&&doc.whtRate===0?'selected':''}>ไม่มี</option>
           <option value="1" ${doc&&doc.whtRate===1?'selected':''}>1%</option>
           <option value="3" ${!doc||doc.whtRate===3?'selected':''}>3%</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:7px;font-size:13px">
+        งวดที่:
+        <input type="number" id="f-installment-no" value="${doc&&doc.installmentNo||''}" placeholder="-" style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px">
+      </div>
+      <div style="display:flex;align-items:center;gap:7px;font-size:13px">
+        สถานะงวด:
+        <select class="form-input" id="f-installment-status" style="width:auto;padding:4px 8px;font-size:12px">
+          <option value="" ${!doc||!doc.installmentStatus?'selected':''}>-</option>
+          <option value="รอออกเอกสาร" ${doc&&doc.installmentStatus==='รอออกเอกสาร'?'selected':''}>รอออกเอกสาร</option>
+          <option value="ส่งแล้วรอโอน" ${doc&&doc.installmentStatus==='ส่งแล้วรอโอน'?'selected':''}>ส่งแล้วรอโอน</option>
+          <option value="รอออก TR" ${doc&&doc.installmentStatus==='รอออก TR'?'selected':''}>รอออก TR</option>
+          <option value="เสร็จสิ้น" ${doc&&doc.installmentStatus==='เสร็จสิ้น'?'selected':''}>เสร็จสิ้น</option>
         </select>
       </div>
     </div>
@@ -1140,8 +1359,10 @@ async function saveNewDoc() {
       document.getElementById('f-duedate')?.value||'',
       document.getElementById('f-refdoc')?.value||'',
       document.getElementById('f-project')?.value||'',
-      sub, vat, wr, wht, net, '',
-      JSON.stringify(items)
+      sub, vat, wr, wht, net,
+      document.getElementById('f-installment-no')?.value||'',
+      document.getElementById('f-installment-status')?.value||'',
+      JSON.stringify(items), ''
     ];
     await appendRow('Documents', row);
     const newDoc = { id:did,docId,type,jobIndex:jobIdx,date,dueDate:row[5],refDocId:row[6],project:row[7],subtotal:sub,vat,whtRate:wr,whtAmount:wht,netAmount:net,note:'',items };
@@ -1176,10 +1397,12 @@ async function updateDoc() {
       document.getElementById('f-duedate')?.value||'',
       document.getElementById('f-refdoc')?.value||'',
       document.getElementById('f-project')?.value||'',
-      sub, vat, wr, wht, net, doc.note,
-      JSON.stringify(items)
+      sub, vat, wr, wht, net,
+      document.getElementById('f-installment-no')?.value||'',
+      document.getElementById('f-installment-status')?.value||'',
+      JSON.stringify(items), doc.note
     ];
-    if(row) await updateCell('Documents', `A${row}:O${row}`, [values]);
+    if(row) await updateCell('Documents', `A${row}:Q${row}`, [values]);
     Object.assign(doc, { date,items,subtotal:sub,vat,whtRate:wr,whtAmount:wht,netAmount:net });
     showToast('บันทึกการแก้ไขสำเร็จ!');
     goBack();
