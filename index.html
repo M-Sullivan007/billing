@@ -390,10 +390,33 @@ async function graphPatch(url, body) {
 
 async function getSiteAndDrive() {
   if(SITE_ID && DRIVE_ID) return;
-  const site = await graphGet(`/sites/${CONFIG.siteUrl}:${CONFIG.sitePath}`);
-  SITE_ID = site.id;
+  try {
+    // Try method 1: hostname:path format
+    const site = await graphGet(`/sites/${CONFIG.siteUrl}:${CONFIG.sitePath}:`);
+    SITE_ID = site.id;
+  } catch(e1) {
+    try {
+      // Try method 2: search by name
+      const sites = await graphGet(`/sites?search=BusinessDevelopmentTeam`);
+      const found = sites.value && sites.value.find(s => s.name === 'BusinessDevelopmentTeam' || s.displayName.includes('Business'));
+      if(!found) throw new Error('Site not found');
+      SITE_ID = found.id;
+    } catch(e2) {
+      // Try method 3: root site
+      const root = await graphGet(`/sites/root`);
+      const subsites = await graphGet(`/sites/${root.id}/sites`);
+      const found2 = subsites.value && subsites.value.find(s => s.name === 'BusinessDevelopmentTeam' || (s.webUrl||'').includes('BusinessDevelopmentTeam'));
+      if(!found2) throw new Error(`Cannot find SharePoint site. Tried: ${e1.message} | ${e2.message}`);
+      SITE_ID = found2.id;
+    }
+  }
+  // Get drive (document library)
   const drives = await graphGet(`/sites/${SITE_ID}/drives`);
-  DRIVE_ID = drives.value[0].id;
+  if(!drives.value || drives.value.length === 0) throw new Error('No drives found in site');
+  // Prefer "Documents" drive
+  const docDrive = drives.value.find(d => d.name === 'Documents' || d.name === 'Shared Documents') || drives.value[0];
+  DRIVE_ID = docDrive.id;
+  console.log('Connected to SharePoint:', SITE_ID, DRIVE_ID);
 }
 
 async function readSheet(sheetName) {
