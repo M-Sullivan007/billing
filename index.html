@@ -280,10 +280,10 @@ const CONFIG = {
   clientId: '872aa473-7000-4be8-a1e1-3c7a23e9bcf5',
   tenantId: 'd048c2b6-81bf-4ac9-90d7-d725bb19581b',
   redirectUri: 'https://m-sullivan007.github.io/billing',
-  siteUrl: 'mandsullivan.sharepoint.com',
-  sitePath: '/sites/BusinessDevelopmentTeam',
+  siteId: 'mandsullivan.sharepoint.com,14345abe-a6d3-4d99-bbce-daab77be2f5b,d67c1f1d-ee6f-4c82-88d8-b6d9f6e01c82',
+  filePath: '/sites/BusinessDevelopmentTeam/Shared Documents/01 Resources and Materials/M&S_Quotation/Quotation Database',
   fileId: 'd3e9ff7c-9eaf-4c23-8af9-6f701f382437',
-  scopes: ['Files.ReadWrite','User.Read']
+  scopes: ['Files.ReadWrite.All','Sites.ReadWrite.All','User.Read']
 };
 
 const COMPANY = {
@@ -390,21 +390,47 @@ async function graphPatch(url, body) {
 
 async function getSiteAndDrive() {
   if(SITE_ID && DRIVE_ID) return;
-  // Use hardcoded Site ID from Graph Explorer
-  SITE_ID = 'mandsullivan.sharepoint.com,14345abe-a6d3-4d99-bbce-daab77be2f5b,d67c1f1d-ee6f-4c82-88d8-b6d9f6e01c82';
-  // Get drives and find Documents library
-  const drives = await graphGet(`/sites/${SITE_ID}/drives`);
-  if(!drives.value || drives.value.length === 0) throw new Error('No drives found in site');
-  const docDrive = drives.value.find(d => d.name === 'Documents' || d.name === 'Shared Documents') || drives.value[0];
-  DRIVE_ID = docDrive.id;
-  console.log('Connected! Drive:', DRIVE_ID);
+  SITE_ID = CONFIG.siteId;
+  // Try to get drive via site drives list
+  try {
+    const drives = await graphGet(`/sites/${SITE_ID}/drives`);
+    if(drives.value && drives.value.length > 0) {
+      const docDrive = drives.value.find(d => d.name === 'Documents' || d.name === 'Shared Documents') || drives.value[0];
+      DRIVE_ID = docDrive.id;
+      console.log('Drive found via /drives:', DRIVE_ID);
+      return;
+    }
+  } catch(e) { console.log('Drive list failed, trying default drive:', e.message); }
+  // Fallback: use site default drive
+  try {
+    const drive = await graphGet(`/sites/${SITE_ID}/drive`);
+    DRIVE_ID = drive.id;
+    console.log('Drive found via /drive:', DRIVE_ID);
+  } catch(e2) {
+    throw new Error('Cannot access SharePoint drive. Please ask Admin to grant Sites.ReadWrite.All permission. (' + e2.message + ')');
+  }
 }
 
 async function readSheet(sheetName) {
   await getSiteAndDrive();
-  const url = `/drives/${DRIVE_ID}/items/${CONFIG.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`;
-  const data = await graphGet(url);
-  return data.values || [];
+  // Try with fileId first, fallback to path-based lookup
+  try {
+    const url = `/drives/${DRIVE_ID}/items/${CONFIG.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`;
+    const data = await graphGet(url);
+    return data.values || [];
+  } catch(e) {
+    console.log('FileId lookup failed, trying by path...');
+    // Search for file by name
+    const search = await graphGet(`/drives/${DRIVE_ID}/root/search(q='MS_Sullivan_Database')`);
+    if(search.value && search.value.length > 0) {
+      const file = search.value.find(f => f.name.includes('MS_Sullivan')) || search.value[0];
+      CONFIG.fileId = file.id;
+      const url2 = `/drives/${DRIVE_ID}/items/${file.id}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`;
+      const data2 = await graphGet(url2);
+      return data2.values || [];
+    }
+    throw new Error('Cannot find Excel file: ' + e.message);
+  }
 }
 
 async function updateCell(sheetName, range, values) {
