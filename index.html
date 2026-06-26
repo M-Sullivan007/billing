@@ -779,12 +779,12 @@ function renderDashboard() {
   const carryJobs = bdFilter
     ? DB.jobs.filter(j=>getJobBDYear(j)==ST.bdYearFilter&&j.carryForward)
     : [];
-  // yearJobs = jobs in selected BD year (after advJobs/lrnJobs are defined)
-  const yearJobs = bdFilter ? [...advJobs,...lrnJobs] : DB.jobs;
-  const yearJobIdxs = new Set(yearJobs.map(j=>j.index));
-  const sumINV = DB.docs.filter(d=>d.type==='INV'&&yearJobIdxs.has(d.jobIndex)).reduce((s,d)=>s+d.netAmount,0);
-  const sumTR  = DB.docs.filter(d=>d.type==='TR' &&yearJobIdxs.has(d.jobIndex)).reduce((s,d)=>s+d.netAmount,0);
-  const activeJobs = yearJobs.filter(j=>j.status==='Active');
+  // Compute stats for selected BD year
+  const filteredJobs = bdFilter ? [...advJobs,...lrnJobs] : DB.jobs;
+  const filteredIdxs = new Set(filteredJobs.map(j=>j.index));
+  const sumINV = DB.docs.filter(d=>d.type==='INV'&&filteredIdxs.has(d.jobIndex)).reduce((s,d)=>s+d.netAmount,0);
+  const sumTR  = DB.docs.filter(d=>d.type==='TR' &&filteredIdxs.has(d.jobIndex)).reduce((s,d)=>s+d.netAmount,0);
+  const activeJobs = filteredJobs.filter(j=>j.status==='Active');
   // CF pending only when filtering by specific BD year
   const cfPendingJobs = bdFilter ? DB.jobs.filter(j=>autoDetectCF(j)&&getJobBDYear(j)==ST.bdYearFilter) : [];
 
