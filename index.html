@@ -702,6 +702,30 @@ function numThai(n) {
 // ═══════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════
+// ── BD YEAR & CF HELPERS ──
+function getCurrentBDYear() {
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  return month >= 10 ? now.getFullYear() + 1 : now.getFullYear();
+}
+function getJobContractAmount(j) {
+  if(j.contractAmount > 0) return j.contractAmount;
+  const firstQT = DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='QT').sort((a,b)=>a.date.localeCompare(b.date))[0];
+  return firstQT ? firstQT.subtotal : 0;
+}
+function getJobTRCollected(j) { return DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='TR').reduce((s,d)=>s+d.subtotal,0); }
+function getJobINVSent(j) { return DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='INV').reduce((s,d)=>s+d.subtotal,0); }
+function getJobINVPending(j) { return Math.max(0, getJobINVSent(j) - getJobTRCollected(j)); }
+function getJobUnbilled(j) { return Math.max(0, getJobContractAmount(j) - getJobINVSent(j)); }
+function getCFAmount(j) { return Math.max(0, getJobContractAmount(j) - getJobTRCollected(j)); }
+function autoDetectCF(j) {
+  if(!j.endDate) return false;
+  if(j.carryForward === true || j.carryForward === false) return false;
+  const bdYear = parseInt(j.bdYear) || getCurrentBDYear();
+  const bdEnd = new Date(bdYear + '-09-30');
+  return new Date(j.endDate) < new Date() && getCFAmount(j) > 0 && new Date(j.endDate) < bdEnd;
+}
+
 const BILLING_STATUS_COLORS = {
   'No Billing':        {bg:'#F1F5F9',color:'#64748B'},
   'QT Pending':        {bg:'#FEF9C3',color:'#854D0E'},
