@@ -713,7 +713,7 @@ function getJobContractAmount(j) {
   const firstQT = DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='QT').sort((a,b)=>a.date.localeCompare(b.date))[0];
   return firstQT ? firstQT.subtotal : 0;
 }
-function getJobTRCollected(j) { return DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='TR').reduce((s,d)=>s+d.subtotal,0); }
+function getJobTRCollected(j) { return DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='TR').reduce((s,d)=>s+d.netAmount,0); }
 function getJobINVSent(j) { return DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='INV').reduce((s,d)=>s+d.subtotal,0); }
 function getJobINVPending(j) { return Math.max(0, getJobINVSent(j) - getJobTRCollected(j)); }
 function getJobUnbilled(j) { return Math.max(0, getJobContractAmount(j) - getJobINVSent(j)); }
@@ -785,7 +785,7 @@ function renderDashboard() {
 
   // CF pending already computed above
   const sumINV = DB.docs.filter(d=>d.type==='INV').reduce((s,d)=>s+d.subtotal,0);
-  const sumTR = DB.docs.filter(d=>d.type==='TR').reduce((s,d)=>s+d.subtotal,0);
+  const sumTR = DB.docs.filter(d=>d.type==='TR').reduce((s,d)=>s+d.netAmount,0);
 
   // Jobs needing action (Active + billing not Done/No Billing)
   const actionJobs = (bdFilter
@@ -1186,7 +1186,7 @@ function renderJobDetail() {
   </tr>`;
 
   const totalNet = docs.filter(d=>d.type!=='QQ').reduce((s,d)=>s+d.netAmount,0);
-  const totalTR = docs.filter(d=>d.type==='TR').reduce((s,d)=>s+d.subtotal,0);
+  const totalTR = docs.filter(d=>d.type==='TR').reduce((s,d)=>s+d.netAmount,0);
 
   setContent(`
   <div class="card" style="margin-bottom:16px">
