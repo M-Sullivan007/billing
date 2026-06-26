@@ -779,7 +779,7 @@ function renderDashboard() {
   const carryJobs = bdFilter
     ? DB.jobs.filter(j=>getJobBDYear(j)==ST.bdYearFilter&&j.carryForward)
     : [];
-  const activeJobs = DB.jobs.filter(j=>j.status==='Active');
+  const activeJobs = yearJobs.filter(j=>j.status==='Active');
   // CF pending only when filtering by specific BD year
   const cfPendingJobs = bdFilter ? DB.jobs.filter(j=>autoDetectCF(j)&&getJobBDYear(j)==ST.bdYearFilter) : [];
 
@@ -795,8 +795,11 @@ function renderDashboard() {
   };
 
   // CF pending already computed above
-  const sumINV = DB.docs.filter(d=>d.type==='INV').reduce((s,d)=>s+d.netAmount,0);
-  const sumTR = DB.docs.filter(d=>d.type==='TR').reduce((s,d)=>s+d.netAmount,0);
+  // Filter docs by BD year if selected
+  const yearJobs = bdFilter ? [...advJobs,...lrnJobs] : DB.jobs;
+  const yearJobIdxs = new Set(yearJobs.map(j=>j.index));
+  const sumINV = DB.docs.filter(d=>d.type==='INV'&&yearJobIdxs.has(d.jobIndex)).reduce((s,d)=>s+d.netAmount,0);
+  const sumTR  = DB.docs.filter(d=>d.type==='TR' &&yearJobIdxs.has(d.jobIndex)).reduce((s,d)=>s+d.netAmount,0);
 
   // Jobs needing action (Active + billing not Done/No Billing)
   const actionJobs = (bdFilter
@@ -922,11 +925,11 @@ function renderDashboard() {
   setContent(`
   ${cfPendingSection}
   ${carrySection}
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
     ${sectionSummary(advJobs,'Advisory','#2D8A5E')}
     ${sectionSummary(lrnJobs,'Learning','#1A5C8A')}
   </div>
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
     <div class="stat-card" style="border-top:3px solid var(--navy)">
       <div class="stat-label">งาน Active ทั้งหมด</div>
       <div class="stat-value">${activeJobs.length}</div>
@@ -943,18 +946,16 @@ function renderDashboard() {
       <div class="stat-sub">฿</div>
     </div>
   </div>
-  <div class="card">
-    <div class="card-header">
-      <h2>⚡ งานที่ต้องติดตาม (${actionJobs.length})</h2>
-      <button class="btn btn-outline btn-sm" onclick="nav('jobs')">ดูทั้งหมด <i class="ti ti-arrow-right"></i></button>
-    </div>
-    ${actionJobs.length===0
-      ? '<div class="empty-state"><i class="ti ti-circle-check"></i><p>ไม่มีงานที่ต้องติดตามตอนนี้</p></div>'
-      : `<div class="table-wrap"><table class="table">
-          <thead><tr><th>Index</th><th>ลูกค้า / โปรเจกต์</th><th>ประเภท</th><th>Billing Status</th><th>เอกสารล่าสุด</th></tr></thead>
-          <tbody>${actionJobs.map(actionRow).join('')}</tbody>
-        </table></div>`}
-  </div>`);
+  ${(()=>{
+    const jobRow = j => {
+      const ca=getJobContractAmount(j),tr=getJobTRCollected(j),inv=getJobINVSent(j);
+      return '<tr onclick="openJob(\''+j.index+'\')"><td class="mono" style="font-size:11px">'+j.index+'</td><td><div style="font-weight:500">'+j.customer+'</div><div style="font-size:11px;color:var(--text-3)">'+j.project+'</div></td><td>'+statusBadge(j.status)+'</td><td>'+billingBadge(j.billingStatus)+'</td><td class="amount">'+(ca?fmtN(ca)+' ฿':'-')+'</td><td class="amount" style="color:var(--gold)">'+(inv?fmtN(inv)+' ฿':'-')+'</td><td class="amount" style="color:var(--green)">'+(tr?fmtN(tr)+' ฿':'-')+'</td></tr>';
+    };
+    const tbl = (jobs) => jobs.length===0?'<div class="empty-state"><i class="ti ti-inbox"></i><p>ไม่มีงาน</p></div>':'<div class="table-wrap"><table class="table"><thead><tr><th>Index</th><th>ลูกค้า / โปรเจกต์</th><th>สถานะ</th><th>Billing</th><th class="right">ยอดสัญญา</th><th class="right">INV</th><th class="right">TR รับแล้ว</th></tr></thead><tbody>'+jobs.map(jobRow).join('')+'</tbody></table></div>';
+    const sec = (title,jobs,color) => '<div class="card" style="margin-bottom:14px;border-top:3px solid '+color+'"><div class="card-header"><h2 style="color:'+color+'">'+title+'</h2><span class="badge" style="background:'+color+'22;color:'+color+'">'+jobs.length+' งาน</span></div>'+tbl(jobs)+'</div>';
+    return sec('Advisory — งาน Consult',advJobs,'#2D8A5E')+sec('Learning — งาน Training',lrnJobs,'#1A5C8A');
+  })()}
+`);
 }
 
 // ═══════════════════════════════════════════════════
