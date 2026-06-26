@@ -710,23 +710,24 @@ function getCurrentBDYear() {
 }
 function getJobContractAmount(j) {
   if(j.contractAmount > 0) return j.contractAmount;
+  // Fallback to first QT net
   const firstQT = DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='QT').sort((a,b)=>a.date.localeCompare(b.date))[0];
-  return firstQT ? firstQT.subtotal : 0;
+  if(firstQT) return firstQT.netAmount;
+  // Final fallback to TR net (for jobs with no QT)
+  return getJobTRCollected(j);
 }
 function getJobTRCollected(j) { return DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='TR').reduce((s,d)=>s+d.netAmount,0); }
 function getJobINVSent(j) { return DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='INV').reduce((s,d)=>s+d.netAmount,0); }
 function getJobINVPending(j) { return Math.max(0, getJobINVSent(j) - getJobTRCollected(j)); }
 function getJobUnbilled(j) { return Math.max(0, getJobContractAmount(j) - getJobINVSent(j)); }
-function getCFAmount(j) { return Math.max(0, getJobContractAmount(j) - getJobTRCollected(j)); }
+function getCFAmount(j) {
+  if(j.carryForward && typeof j.carryForward === 'number') return j.carryForward;
+  return Math.max(0, getJobContractAmount(j) - getJobTRCollected(j));
+}
 function getJobBDYear(j) {
-  // If bdYear set manually, use it
+  // Only use manually set bdYear, otherwise null
   if(j.bdYear) return parseInt(j.bdYear);
-  // Auto calculate from job year: year 26 = BD 2026, year 25 = BD 2025
-  if(j.year) {
-    const y = parseInt(j.year);
-    return y < 100 ? 2000 + y : y;
-  }
-  return getCurrentBDYear();
+  return null; // not set yet
 }
 
 function autoDetectCF(j) {
@@ -754,7 +755,7 @@ function billingBadge(s) {
 
 function renderDashboard() {
   document.getElementById('page-title').textContent = 'Dashboard';
-  const bdYears = [...new Set(DB.jobs.map(j=>getJobBDYear(j)).filter(Boolean))].sort().reverse();
+  const bdYears = [...new Set(DB.jobs.map(j=>j.bdYear).filter(Boolean))].sort().reverse();
   const curBD = ST.bdYearFilter||'all';
   document.getElementById('topbar-right').innerHTML = `
     <div style="display:flex;align-items:center;gap:8px">
@@ -771,22 +772,19 @@ function renderDashboard() {
   const allLrnJobs = DB.jobs.filter(j=>j.type==='Learning');
   // Filter by BD year if selected — exclude carry forward from totals
   const advJobs = bdFilter
-    ? allAdvJobs.filter(j=>getJobBDYear(j)==ST.bdYearFilter&&!j.carryForward)
+    ? allAdvJobs.filter(j=>j.bdYear==ST.bdYearFilter)
     : allAdvJobs;
   const lrnJobs = bdFilter
-    ? allLrnJobs.filter(j=>getJobBDYear(j)==ST.bdYearFilter&&!j.carryForward)
+    ? allLrnJobs.filter(j=>j.bdYear==ST.bdYearFilter)
     : allLrnJobs;
-  const carryJobs = bdFilter
-    ? DB.jobs.filter(j=>getJobBDYear(j)==ST.bdYearFilter&&j.carryForward)
-    : [];
+  const carryJobs = []; // No longer used
   // Compute stats for selected BD year
   const filteredJobs = bdFilter ? [...advJobs,...lrnJobs] : DB.jobs;
   const filteredIdxs = new Set(filteredJobs.map(j=>j.index));
   const sumINV = DB.docs.filter(d=>d.type==='INV'&&filteredIdxs.has(d.jobIndex)).reduce((s,d)=>s+d.netAmount,0);
   const sumTR  = DB.docs.filter(d=>d.type==='TR' &&filteredIdxs.has(d.jobIndex)).reduce((s,d)=>s+d.netAmount,0);
   const activeJobs = filteredJobs.filter(j=>j.status==='Active');
-  // CF pending only when filtering by specific BD year
-  const cfPendingJobs = bdFilter ? DB.jobs.filter(j=>autoDetectCF(j)&&getJobBDYear(j)==ST.bdYearFilter) : [];
+  // CF is auto-calculated, no pending confirmation needed
 
   // Confirmed amount using new contract amount logic
   const confirmedAmount = (jobs) => {
@@ -812,35 +810,44 @@ function renderDashboard() {
     const active = jobs.filter(j=>j.status==='Active').length;
     const done = jobs.filter(j=>j.status==='Done').length;
     const declined = jobs.filter(j=>j.status==='Declined').length;
-    const confirmed = confirmedAmount(jobs);
+    const confirmed = jobs.filter(j=>j.status==='Active'||j.status==='Done').reduce((s,j)=>{
+      if(j.billingStatus==='No Billing'||j.tuRac) return s+(parseFloat(j.netReceived)||0);
+      return s+getJobContractAmount(j);
+    },0);
     const inv = DB.docs.filter(d=>d.type==='INV'&&jobs.find(j=>j.index===d.jobIndex)).reduce((s,d)=>s+d.netAmount,0);
     const tr = DB.docs.filter(d=>d.type==='TR'&&jobs.find(j=>j.index===d.jobIndex)).reduce((s,d)=>s+d.netAmount,0);
     const noBilling = jobs.filter(j=>j.billingStatus==='No Billing'||j.tuRac).length;
+    const cfTotal = jobs.filter(j=>!(j.billingStatus==='No Billing'||j.tuRac)).reduce((s,j)=>s+getCFAmount(j),0);
     return `<div class="card" style="border-top:3px solid ${color}">
       <div class="card-header">
         <h2 style="color:${color}">${label}</h2>
         <span class="badge" style="background:${color}22;color:${color}">${jobs.length} งาน</span>
       </div>
-      <div style="padding:14px;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
+      <div style="padding:14px;display:grid;grid-template-columns:repeat(5,1fr);gap:8px">
         <div style="text-align:center">
           <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">งาน</div>
           <div style="font-size:20px;font-weight:700;color:var(--text)">${active}</div>
-          <div style="font-size:10px;color:var(--text-3)">Active | Done: ${done} | Declined: ${declined}</div>
+          <div style="font-size:10px;color:var(--text-3)">Done:${done} Declined:${declined}</div>
         </div>
         <div style="text-align:center;border-left:1px solid var(--border)">
           <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">ยืนยันแล้ว</div>
-          <div style="font-size:13px;font-weight:700;color:${color}">${fmtN(confirmed)}</div>
-          <div style="font-size:10px;color:var(--text-3)">฿ (Active+Done)</div>
+          <div style="font-size:12px;font-weight:700;color:${color}">${fmtN(confirmed)}</div>
+          <div style="font-size:10px;color:var(--text-3)">฿</div>
         </div>
         <div style="text-align:center;border-left:1px solid var(--border)">
-          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">INV</div>
-          <div style="font-size:13px;font-weight:700;color:var(--text)">${fmtN(inv)}</div>
-          <div style="font-size:10px;color:var(--text-3)">รับเงินแล้ว: ${fmtN(tr)} ฿</div>
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">INV ออกแล้ว</div>
+          <div style="font-size:12px;font-weight:700;color:var(--text)">${fmtN(inv)}</div>
+          <div style="font-size:10px;color:var(--text-3)">฿</div>
         </div>
         <div style="text-align:center;border-left:1px solid var(--border)">
-          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">ภาครัฐ</div>
-          <div style="font-size:20px;font-weight:700;color:var(--text)">${noBilling}</div>
-          <div style="font-size:10px;color:var(--text-3)">งาน No Billing</div>
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">TR รับแล้ว</div>
+          <div style="font-size:12px;font-weight:700;color:var(--green)">${fmtN(tr)}</div>
+          <div style="font-size:10px;color:var(--text-3)">฿</div>
+        </div>
+        <div style="text-align:center;border-left:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">CF ค้างอยู่</div>
+          <div style="font-size:12px;font-weight:700;color:#B45309">${cfTotal>0?fmtN(cfTotal):'-'}</div>
+          <div style="font-size:10px;color:var(--text-3)">฿ | ${noBilling} ภาครัฐ</div>
         </div>
       </div>
     </div>`;
@@ -881,70 +888,50 @@ function renderDashboard() {
   </div>` : '';
 
   // CF pending confirmation section
-  const cfPendingSection = cfPendingJobs.length > 0 ? `
-  <div class="card" style="margin-bottom:16px;border-left:4px solid #DC2626;border:2px solid #FECACA">
-    <div class="card-header" style="background:#FFF5F5">
-      <h2 style="color:#DC2626">⚠️ รอ Confirm Carry Forward (${cfPending.length} งาน)</h2>
-      <div style="font-size:12px;color:var(--text-3)">End Date ผ่านมาแล้ว และยังมียอดค้างอยู่</div>
-    </div>
-    <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
-      ${cfPendingJobs.map(j=>{
-        const cf=getCFAmount(j), tr=getJobTRCollected(j), contract=getJobContractAmount(j);
-        const nextBD=(parseInt(j.bdYear)||getCurrentBDYear())+1;
-        return`<div style="background:#fff;border:1px solid #FECACA;border-radius:10px;padding:14px">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
-            <div>
-              <div style="font-size:10px;color:var(--text-3);font-family:monospace">${j.index}</div>
-              <div style="font-weight:600;font-size:14px">${j.customer}</div>
-              <div style="font-size:12px;color:var(--text-2)">${j.project}</div>
-              <div style="font-size:11px;color:var(--text-3);margin-top:4px">End Date: ${fmtD(j.endDate)}</div>
-            </div>
-            <div style="text-align:right">
-              <div style="font-size:11px;color:var(--text-3)">ยอดสัญญา</div>
-              <div style="font-size:15px;font-weight:700;color:var(--navy)">${fmtN(contract)} ฿</div>
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;padding:10px;background:var(--bg);border-radius:8px;font-size:11px;text-align:center">
-            <div><div style="color:var(--green);font-weight:600">${fmtN(tr)} ฿</div><div style="color:var(--text-3)">TR รับแล้ว</div></div>
-            <div style="border-left:1px solid var(--border);border-right:1px solid var(--border)">
-              <div style="color:#DC2626;font-weight:600">${fmtN(cf)} ฿</div>
-              <div style="color:var(--text-3)">ยังค้างอยู่</div>
-            </div>
-            <div><div style="color:#B45309;font-weight:600">ปี BD ${nextBD}</div><div style="color:var(--text-3)">จะย้ายไป</div></div>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-sm" style="background:#FEF3C7;color:#B45309;border:1px solid #FDE68A;flex:1" onclick="confirmCF('${j.index}',true,${nextBD})">📦 CF ไปปี BD ${nextBD}</button>
-            <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #86EFAC;flex:1" onclick="confirmCF('${j.index}',false,null)">✅ ไม่ CF เก็บไว้ปีนี้</button>
-            <button class="btn btn-sm btn-outline" onclick="extendEndDate('${j.index}')">📅 เลื่อน End Date</button>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>
-  </div>` : '';
+  // CF pending section removed
+
+  // Overall summary
+  const allJobs = [...advJobs, ...lrnJobs];
+  const totalConfirmed = allJobs.filter(j=>j.status==='Active'||j.status==='Done').reduce((s,j)=>{
+    if(j.billingStatus==='No Billing'||j.tuRac) return s+(parseFloat(j.netReceived)||0);
+    return s+getJobContractAmount(j);
+  },0);
+  const totalCF = allJobs.filter(j=>!(j.billingStatus==='No Billing'||j.tuRac)).reduce((s,j)=>s+getCFAmount(j),0);
 
   setContent(`
-  ${cfPendingSection}
-  ${carrySection}
+  <div class="card" style="margin-bottom:16px;border-top:3px solid var(--navy)">
+    <div class="card-header"><h2>ภาพรวม${bdFilter?' ปี BD '+ST.bdYearFilter:''}</h2></div>
+    <div style="padding:14px;display:grid;grid-template-columns:repeat(5,1fr);gap:10px;text-align:center">
+      <div>
+        <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">งานทั้งหมด</div>
+        <div style="font-size:24px;font-weight:700">${allJobs.length}</div>
+        <div style="font-size:10px;color:var(--text-3)">Active: ${activeJobs.length}</div>
+      </div>
+      <div style="border-left:1px solid var(--border)">
+        <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">ยืนยันแล้ว</div>
+        <div style="font-size:16px;font-weight:700;color:var(--navy)">${fmtN(totalConfirmed)}</div>
+        <div style="font-size:10px;color:var(--text-3)">฿</div>
+      </div>
+      <div style="border-left:1px solid var(--border)">
+        <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">INV ออกแล้ว</div>
+        <div style="font-size:16px;font-weight:700;color:var(--text)">${fmtN(sumINV)}</div>
+        <div style="font-size:10px;color:var(--text-3)">฿</div>
+      </div>
+      <div style="border-left:1px solid var(--border)">
+        <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">TR รับแล้ว</div>
+        <div style="font-size:16px;font-weight:700;color:var(--green)">${fmtN(sumTR)}</div>
+        <div style="font-size:10px;color:var(--text-3)">฿</div>
+      </div>
+      <div style="border-left:1px solid var(--border)">
+        <div style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px">CF ค้างอยู่</div>
+        <div style="font-size:16px;font-weight:700;color:#B45309">${totalCF>0?fmtN(totalCF):'-'}</div>
+        <div style="font-size:10px;color:var(--text-3)">฿</div>
+      </div>
+    </div>
+  </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
     ${sectionSummary(advJobs,'Advisory','#2D8A5E')}
     ${sectionSummary(lrnJobs,'Learning','#1A5C8A')}
-  </div>
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
-    <div class="stat-card" style="border-top:3px solid var(--navy)">
-      <div class="stat-label">งาน Active ทั้งหมด</div>
-      <div class="stat-value">${activeJobs.length}</div>
-      <div class="stat-sub">จาก ${DB.jobs.length} งาน</div>
-    </div>
-    <div class="stat-card" style="border-top:3px solid var(--gold)">
-      <div class="stat-label">มูลค่า INV รวม</div>
-      <div class="stat-value" style="font-size:18px">${fmtN(sumINV)}</div>
-      <div class="stat-sub">฿</div>
-    </div>
-    <div class="stat-card" style="border-top:3px solid var(--green)">
-      <div class="stat-label">มูลค่า TR รวม (รับแล้ว)</div>
-      <div class="stat-value" style="font-size:18px">${fmtN(sumTR)}</div>
-      <div class="stat-sub">฿</div>
-    </div>
   </div>
   ${(()=>{
     const jobRow = j => {
