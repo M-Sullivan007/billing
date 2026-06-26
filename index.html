@@ -947,7 +947,7 @@ function renderDashboard() {
     // Jobs from OTHER BD years that still have CF outstanding
     const prevCFJobs = DB.jobs.filter(j=>{
       if(!j.bdYear) return false;
-      if(String(parseInt(j.bdYear||0))===String(ST.bdYearFilter)) return false; // same year = skip
+      if(parseInt(j.bdYear||0) >= parseInt(ST.bdYearFilter)) return false; // only OLDER years
       if(j.billingStatus==='No Billing'||j.tuRac) return false; // govt = skip
       return getCFAmount(j) > 0; // has outstanding CF
     });
