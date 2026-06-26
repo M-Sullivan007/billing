@@ -755,7 +755,7 @@ function billingBadge(s) {
 
 function renderDashboard() {
   document.getElementById('page-title').textContent = 'Dashboard';
-  const bdYears = [...new Set(DB.jobs.map(j=>j.bdYear).filter(Boolean))].sort().reverse();
+  const bdYears = [...new Set(DB.jobs.map(j=>j.bdYear).filter(v=>v&&String(v).trim()!=='').map(v=>String(parseInt(v))))].sort().reverse();
   const curBD = ST.bdYearFilter||'all';
   document.getElementById('topbar-right').innerHTML = `
     <div style="display:flex;align-items:center;gap:8px">
@@ -772,10 +772,10 @@ function renderDashboard() {
   const allLrnJobs = DB.jobs.filter(j=>j.type==='Learning');
   // Filter by BD year if selected — exclude carry forward from totals
   const advJobs = bdFilter
-    ? allAdvJobs.filter(j=>j.bdYear==ST.bdYearFilter)
+    ? allAdvJobs.filter(j=>String(parseInt(j.bdYear||0))===String(ST.bdYearFilter))
     : allAdvJobs;
   const lrnJobs = bdFilter
-    ? allLrnJobs.filter(j=>j.bdYear==ST.bdYearFilter)
+    ? allLrnJobs.filter(j=>String(parseInt(j.bdYear||0))===String(ST.bdYearFilter))
     : allLrnJobs;
   const carryJobs = []; // No longer used
   // Compute stats for selected BD year
@@ -941,6 +941,39 @@ function renderDashboard() {
     const tbl = (jobs) => jobs.length===0?'<div class="empty-state"><i class="ti ti-inbox"></i><p>ไม่มีงาน</p></div>':'<div class="table-wrap"><table class="table"><thead><tr><th>Index</th><th>ลูกค้า / โปรเจกต์</th><th>สถานะ</th><th>Billing</th><th class="right">ยอดสัญญา</th><th class="right">INV</th><th class="right">TR รับแล้ว</th></tr></thead><tbody>'+jobs.map(jobRow).join('')+'</tbody></table></div>';
     const sec = (title,jobs,color) => '<div class="card" style="margin-bottom:14px;border-top:3px solid '+color+'"><div class="card-header"><h2 style="color:'+color+'">'+title+'</h2><span class="badge" style="background:'+color+'22;color:'+color+'">'+jobs.length+' งาน</span></div>'+tbl(jobs)+'</div>';
     return sec('Advisory — งาน Consult',advJobs,'#2D8A5E')+sec('Learning — งาน Training',lrnJobs,'#1A5C8A');
+  })()}
+  ${(()=>{
+    if(!bdFilter) return '';
+    // Jobs from OTHER BD years that still have CF outstanding
+    const prevCFJobs = DB.jobs.filter(j=>{
+      if(!j.bdYear) return false;
+      if(String(parseInt(j.bdYear||0))===String(ST.bdYearFilter)) return false; // same year = skip
+      if(j.billingStatus==='No Billing'||j.tuRac) return false; // govt = skip
+      return getCFAmount(j) > 0; // has outstanding CF
+    });
+    if(prevCFJobs.length===0) return '';
+    const totalCFPrev = prevCFJobs.reduce((s,j)=>s+getCFAmount(j),0);
+    const cfRow = j => {
+      const cf=getCFAmount(j), tr=getJobTRCollected(j), contract=getJobContractAmount(j);
+      return '<tr onclick="openJob(\''+j.index+'\')">'+
+        '<td class="mono" style="font-size:11px">'+j.index+'</td>'+
+        '<td><div style="font-weight:500">'+j.customer+'</div><div style="font-size:11px;color:var(--text-3)">'+j.project+'</div></td>'+
+        '<td><span class="badge" style="background:#FEF3C7;color:#B45309">BD '+(j.bdYear||'-')+'</span></td>'+
+        '<td class="amount">'+fmtN(contract)+' ฿</td>'+
+        '<td class="amount" style="color:var(--green)">'+fmtN(tr)+' ฿</td>'+
+        '<td class="amount" style="color:#B45309;font-weight:700">'+fmtN(cf)+' ฿</td>'+
+      '</tr>';
+    };
+    return '<div class="card" style="margin-bottom:14px;border-left:4px solid #B45309;border-top:none">'+
+      '<div class="card-header">'+
+        '<h2 style="color:#B45309">📦 CF ค้างมาจากปีก่อน ('+prevCFJobs.length+' งาน)</h2>'+
+        '<div style="font-size:12px;color:var(--text-3)">ยอดรวมที่ยังต้องเก็บ: <strong style="color:#B45309">'+fmtN(totalCFPrev)+' ฿</strong></div>'+
+      '</div>'+
+      '<div class="table-wrap"><table class="table">'+
+        '<thead><tr><th>Index</th><th>ลูกค้า / โปรเจกต์</th><th>ปี BD</th><th class="right">ยอดสัญญา</th><th class="right">TR รับแล้ว</th><th class="right">ยังค้างอยู่</th></tr></thead>'+
+        '<tbody>'+prevCFJobs.map(cfRow).join('')+'</tbody>'+
+      '</table></div>'+
+    '</div>';
   })()}
 `);
 }
