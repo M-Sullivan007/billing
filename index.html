@@ -509,6 +509,7 @@ async function loadAllData() {
         billingStatus: r[13]||'', totalInstallments: parseInt(r[14])||0,
         note: r[15]||'',
         bdYear: r[16]||'', carryForward: r[17]===true||r[17]==='TRUE'||r[17]===1,
+        contractAmount: parseFloat(r[18])||0, endDate: r[19]||'',
         _row: i+1
       });
     }
@@ -737,23 +738,19 @@ function renderDashboard() {
     : [];
   const activeJobs = DB.jobs.filter(j=>j.status==='Active');
 
-  // Confirmed amount = QT of Active/Done jobs + net_received of No Billing jobs
+  // Confirmed amount using new contract amount logic
   const confirmedAmount = (jobs) => {
-    let total = 0;
-    for(const j of jobs) {
-      if(j.status==='Active'||j.status==='Done') {
-        if(j.billingStatus==='No Billing'||j.tuRac) {
-          // Government projects - use net_received
-          total += parseFloat(j.netReceived)||0;
-        } else {
-          // Private projects - use first QT amount
-          const qts = DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='QT');
-          if(qts.length>0) total += qts[0].subtotal||0;
-        }
-      }
-    }
-    return total;
+    return jobs
+      .filter(j=>j.status==='Active'||j.status==='Done')
+      .filter(j=>!j.carryForward)
+      .reduce((s,j)=>{
+        if(j.billingStatus==='No Billing'||j.tuRac) return s+(parseFloat(j.netReceived)||0);
+        return s + getJobContractAmount(j);
+      },0);
   };
+
+  // CF jobs pending confirmation
+  const cfPending = DB.jobs.filter(j=>autoDetectCF(j));
   const sumINV = DB.docs.filter(d=>d.type==='INV').reduce((s,d)=>s+d.subtotal,0);
   const sumTR = DB.docs.filter(d=>d.type==='TR').reduce((s,d)=>s+d.subtotal,0);
 
@@ -811,25 +808,72 @@ function renderDashboard() {
     </tr>`;
   };
 
+  // CF confirmed jobs for this BD year
   const carrySection = carryJobs.length > 0 ? `
   <div class="card" style="margin-bottom:16px;border-left:4px solid #B45309">
     <div class="card-header">
       <h2 style="color:#B45309">📦 Carry Forward ปี BD ${ST.bdYearFilter} (${carryJobs.length} งาน)</h2>
-      <div style="font-size:12px;color:var(--text-3)">ยังปิดยอดไม่ได้ — ยกไปปีหน้า ไม่นับในยอด BD ปีนี้</div>
+      <div style="font-size:12px;color:var(--text-3)">ยกมาจากปีก่อน — ไม่นับในยอดงานใหม่</div>
     </div>
     <div class="table-wrap"><table class="table">
-      <thead><tr><th>Index</th><th>ลูกค้า / โปรเจกต์</th><th>ประเภท</th><th>Billing Status</th></tr></thead>
-      <tbody>${carryJobs.map(j=>`<tr onclick="openJob('${j.index}')">
-        <td class="mono" style="font-size:11px">${j.index}</td>
-        <td><div style="font-weight:500">${j.customer}</div><div style="font-size:11px;color:var(--text-3)">${j.project}</div></td>
-        <td><span class="badge ${j.type==='Advisory'?'badge-advisory':'badge-learning'}">${j.type}</span></td>
-        <td>${billingBadge(j.billingStatus)}</td>
-      </tr>`).join('')}
+      <thead><tr><th>Index</th><th>ลูกค้า / โปรเจกต์</th><th>ยอด CF</th><th>TR รับแล้ว</th><th>ยังค้างอยู่</th></tr></thead>
+      <tbody>${carryJobs.map(j=>{
+        const cf=getCFAmount(j), tr=getJobTRCollected(j), remaining=Math.max(0,cf-tr);
+        return`<tr onclick="openJob('${j.index}')">
+          <td class="mono" style="font-size:11px">${j.index}</td>
+          <td><div style="font-weight:500">${j.customer}</div><div style="font-size:11px;color:var(--text-3)">${j.project}</div></td>
+          <td style="font-weight:600">${fmtN(cf)} ฿</td>
+          <td style="color:var(--green)">${tr?fmtN(tr)+' ฿':'-'}</td>
+          <td style="color:#B45309;font-weight:600">${remaining?fmtN(remaining)+' ฿':'-'}</td>
+        </tr>`;}).join('')}
       </tbody>
     </table></div>
   </div>` : '';
 
+  // CF pending confirmation section
+  const cfPendingSection = cfPending.length > 0 ? `
+  <div class="card" style="margin-bottom:16px;border-left:4px solid #DC2626;border:2px solid #FECACA">
+    <div class="card-header" style="background:#FFF5F5">
+      <h2 style="color:#DC2626">⚠️ รอ Confirm Carry Forward (${cfPending.length} งาน)</h2>
+      <div style="font-size:12px;color:var(--text-3)">End Date ผ่านมาแล้ว และยังมียอดค้างอยู่</div>
+    </div>
+    <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
+      ${cfPending.map(j=>{
+        const cf=getCFAmount(j), tr=getJobTRCollected(j), contract=getJobContractAmount(j);
+        const nextBD=(parseInt(j.bdYear)||getCurrentBDYear())+1;
+        return`<div style="background:#fff;border:1px solid #FECACA;border-radius:10px;padding:14px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+            <div>
+              <div style="font-size:10px;color:var(--text-3);font-family:monospace">${j.index}</div>
+              <div style="font-weight:600;font-size:14px">${j.customer}</div>
+              <div style="font-size:12px;color:var(--text-2)">${j.project}</div>
+              <div style="font-size:11px;color:var(--text-3);margin-top:4px">End Date: ${fmtD(j.endDate)}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:11px;color:var(--text-3)">ยอดสัญญา</div>
+              <div style="font-size:15px;font-weight:700;color:var(--navy)">${fmtN(contract)} ฿</div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;padding:10px;background:var(--bg);border-radius:8px;font-size:11px;text-align:center">
+            <div><div style="color:var(--green);font-weight:600">${fmtN(tr)} ฿</div><div style="color:var(--text-3)">TR รับแล้ว</div></div>
+            <div style="border-left:1px solid var(--border);border-right:1px solid var(--border)">
+              <div style="color:#DC2626;font-weight:600">${fmtN(cf)} ฿</div>
+              <div style="color:var(--text-3)">ยังค้างอยู่</div>
+            </div>
+            <div><div style="color:#B45309;font-weight:600">ปี BD ${nextBD}</div><div style="color:var(--text-3)">จะย้ายไป</div></div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm" style="background:#FEF3C7;color:#B45309;border:1px solid #FDE68A;flex:1" onclick="confirmCF('${j.index}',true,${nextBD})">📦 CF ไปปี BD ${nextBD}</button>
+            <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #86EFAC;flex:1" onclick="confirmCF('${j.index}',false,null)">✅ ไม่ CF เก็บไว้ปีนี้</button>
+            <button class="btn btn-sm btn-outline" onclick="extendEndDate('${j.index}')">📅 เลื่อน End Date</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>` : '';
+
   setContent(`
+  ${cfPendingSection}
   ${carrySection}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
     ${sectionSummary(advJobs,'Advisory','#2D8A5E')}
@@ -983,6 +1027,8 @@ function renderEditJob() {
             <input type="checkbox" id="ej-billing" ${j.needsBilling?'checked':''}> ต้องออก Billing
           </label>
         </div>
+        <div class="form-group"><label class="form-label">ยอดสัญญา (฿)</label><input class="form-input" type="number" id="ej-contract" value="${j.contractAmount||''}"></div>
+        <div class="form-group"><label class="form-label">End Date (วันสิ้นสุดงาน)</label><input class="form-input" type="date" id="ej-enddate" value="${j.endDate||''}"></div>
         <div class="form-group full"><label class="form-label">Note</label><textarea class="form-input" id="ej-note" rows="2">${j.note||''}</textarea></div>
       </div>
     </div>
@@ -1052,9 +1098,10 @@ async function saveEditJob(idx) {
       updated.clientTaxId||'', updated.needsBilling, updated.tuRac,
       updated.netReceived||'', updated.status, updated.billingStatus||'',
       updated.totalInstallments||'', updated.note||'',
-      updated.bdYear||'', updated.carryForward||false
+      updated.bdYear||'', updated.carryForward||false,
+      updated.contractAmount||'', updated.endDate||''
     ];
-    if(j._row) await updateCell('Jobs', `A${j._row}:R${j._row}`, [row]);
+    if(j._row) await updateCell('Jobs', `A${j._row}:T${j._row}`, [row]);
     Object.assign(j, updated);
     showToast('บันทึกสำเร็จ!');
     ST.curJob = idx;
@@ -1203,6 +1250,8 @@ function renderNewJob() {
           </label>
         </div>
         <div class="form-group"><label class="form-label">ยอดที่ได้จริง (หลังหัก TU-RAC)</label><input class="form-input" id="nj-netreceived" type="number" placeholder="0.00"></div>
+        <div class="form-group"><label class="form-label">ยอดสัญญา (฿)</label><input class="form-input" type="number" id="nj-contract" placeholder="0.00"></div>
+        <div class="form-group"><label class="form-label">End Date (วันสิ้นสุดงาน)</label><input class="form-input" type="date" id="nj-enddate"></div>
         <div class="form-group"><label class="form-label">Note</label><input class="form-input" id="nj-note" placeholder="หมายเหตุ"></div>
       </div>
     </div>
@@ -1303,7 +1352,11 @@ async function saveNewJob() {
       document.getElementById('nj-turac').checked,
       document.getElementById('nj-netreceived').value||'',
       document.getElementById('nj-status').value,
-      document.getElementById('nj-note').value
+      '', '', // billingStatus, totalInstallments
+      document.getElementById('nj-note').value,
+      '', false, // bdYear, carryForward
+      parseFloat(document.getElementById('nj-contract').value)||'',
+      document.getElementById('nj-enddate').value||''
     ];
     await appendRow('Jobs', row);
     DB.jobs.push({ id:jid,year,type,index:idx,customer,project,contact:row[6],address:row[7],clientTaxId:row[8],needsBilling:row[9],tuRac:row[10],netReceived:row[11],status:row[12],note:row[13] });
@@ -1777,44 +1830,66 @@ function renderTracker() {
   document.getElementById('topbar-right').innerHTML = '';
 
   const SECTIONS = [
-    { key:'Declined',     label:'❌ Declined',              color:'#DC2626', bg:'#FEF2F2',  filter: j => j.status==='Declined' },
-    { key:'QT Pending',   label:'🕐 QT Pending — รอลูกค้าตอบ', color:'#B45309', bg:'#FEF3C7', filter: j => j.billingStatus==='QT Pending' },
-    { key:'QT Approved',  label:'✅ กำลังดำเนินการ',         color:'#1D4ED8', bg:'#EFF6FF',  filter: j => j.billingStatus==='QT Approved' },
-    { key:'INV Sent',     label:'📤 รอออก INV — งานเสร็จแล้ว', color:'#7C3AED', bg:'#F5F3FF', filter: j => j.billingStatus==='INV Sent'&&j.status!=='Done' },
-    { key:'Payment',      label:'💰 รอเก็บเงิน — ส่ง INV แล้ว', color:'#0369A1', bg:'#F0F9FF', filter: j => j.billingStatus==='Payment Received' },
-    { key:'TR',           label:'🧾 รอออก TR — ลูกค้าโอนแล้ว', color:'#065F46', bg:'#ECFDF5', filter: j => j.billingStatus==='TR Issued'&&j.status!=='Done' },
-    { key:'Done',         label:'🏁 Done — เสร็จสิ้น',        color:'#166534', bg:'#F0FDF4',  filter: j => j.status==='Done'||j.billingStatus==='Done' },
+    { key:'QT Pending',  label:'🕐 QT Pending — รอลูกค้าตอบ',    color:'#B45309', bg:'#FEF3C7', filter: j => j.billingStatus==='QT Pending'&&j.status!=='Declined' },
+    { key:'QT Approved', label:'🔨 กำลังดำเนินการ',               color:'#1D4ED8', bg:'#EFF6FF', filter: j => j.billingStatus==='QT Approved' },
+    { key:'INV',         label:'📋 รอออก INV — งานเสร็จแล้ว',    color:'#7C3AED', bg:'#F5F3FF', filter: j => j.billingStatus==='INV Sent'&&j.status!=='Done' },
+    { key:'Payment',     label:'💰 รอเก็บเงิน — ส่ง INV แล้ว',   color:'#0369A1', bg:'#F0F9FF', filter: j => j.billingStatus==='Payment Received' },
+    { key:'TR',          label:'🧾 รอออก TR — ลูกค้าโอนแล้ว',    color:'#065F46', bg:'#ECFDF5', filter: j => j.billingStatus==='TR Issued'&&j.status!=='Done' },
+    { key:'Done',        label:'🏁 Done — เสร็จสิ้น',             color:'#166534', bg:'#F0FDF4', filter: j => j.status==='Done'||j.billingStatus==='Done' },
+    { key:'Declined',    label:'❌ Declined',                      color:'#DC2626', bg:'#FEF2F2', filter: j => j.status==='Declined' },
   ];
 
   const jobCard = (j) => {
-    const docs = getDocsByJob(j.index);
-    const qtAmt = docs.filter(d=>d.type==='QT')[0]?.subtotal||0;
-    const invCount = docs.filter(d=>d.type==='INV').length;
-    const trCount = docs.filter(d=>d.type==='TR').length;
-    return `<div onclick="openJob('${j.index}')" style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:10px 14px;cursor:pointer;transition:all .15s" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='#fff'">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div>
-          <div style="font-size:11px;color:var(--text-3);font-family:monospace">${j.index}</div>
-          <div style="font-weight:600;font-size:13px;margin-top:2px">${j.customer}</div>
-          <div style="font-size:11px;color:var(--text-2);margin-top:1px">${j.project}</div>
+    const contractAmt = getJobContractAmount(j);
+    const trCollected = getJobTRCollected(j);
+    const invPending  = getJobINVPending(j);
+    const unbilled    = getJobUnbilled(j);
+    const invCount = DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='INV').length;
+    const trCount  = DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='TR').length;
+
+    const breakdown = (j.status!=='Declined') ? `
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-size:10px">
+        <div style="text-align:center">
+          <div style="color:var(--green);font-weight:600">${trCollected?fmtN(trCollected)+' ฿':'-'}</div>
+          <div style="color:var(--text-3)">✅ TR รับแล้ว</div>
         </div>
-        <div style="text-align:right;flex-shrink:0;margin-left:12px">
-          <div style="font-size:13px;font-weight:600;color:var(--navy)">${qtAmt?fmtN(qtAmt)+' ฿':'-'}</div>
+        <div style="text-align:center;border-left:1px solid var(--border-light);border-right:1px solid var(--border-light)">
+          <div style="color:#0369A1;font-weight:600">${invPending?fmtN(invPending)+' ฿':'-'}</div>
+          <div style="color:var(--text-3)">📤 INV รอโอน</div>
+        </div>
+        <div style="text-align:center">
+          <div style="color:#7C3AED;font-weight:600">${unbilled?fmtN(unbilled)+' ฿':'-'}</div>
+          <div style="color:var(--text-3)">📋 ยังไม่ออก INV</div>
+        </div>
+      </div>` : '';
+
+    return `<div onclick="openJob('${j.index}')" style="background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .15s" onmouseover="this.style.borderColor='var(--navy)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div style="min-width:0;flex:1">
+          <div style="font-size:10px;color:var(--text-3);font-family:monospace">${j.index}</div>
+          <div style="font-weight:600;font-size:13px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${j.customer}</div>
+          <div style="font-size:11px;color:var(--text-2);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${j.project}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:10px">
+          <div style="font-size:13px;font-weight:600;color:var(--navy)">${contractAmt?fmtN(contractAmt)+' ฿':'-'}</div>
           <div style="font-size:10px;color:var(--text-3);margin-top:2px">INV ${invCount} | TR ${trCount}</div>
         </div>
       </div>
+      ${breakdown}
     </div>`;
   };
 
   const sections = SECTIONS.map(s => {
     const jobs = DB.jobs.filter(s.filter);
     if(jobs.length === 0) return '';
-    return `<div style="margin-bottom:20px">
+    const totalContract = jobs.reduce((sum,j)=>sum+getJobContractAmount(j),0);
+    return `<div style="margin-bottom:24px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <div style="font-size:13px;font-weight:600;color:${s.color}">${s.label}</div>
         <span style="background:${s.bg};color:${s.color};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500">${jobs.length} งาน</span>
+        ${totalContract?`<span style="font-size:11px;color:var(--text-3);margin-left:4px">${fmtN(totalContract)} ฿</span>`:''}
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:8px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px">
         ${jobs.map(jobCard).join('')}
       </div>
     </div>`;
@@ -1863,6 +1938,51 @@ function renderTracker() {
   </div>`;
 
   setContent(calcHtml + (sections || '<div class="empty-state"><i class="ti ti-check"></i><p>ไม่มีงานที่ต้องติดตาม</p></div>'));
+}
+
+async function confirmCF(jobIdx, isCF, targetBDYear) {
+  const j = DB.jobs.find(x=>x.index===jobIdx);
+  if(!j) return;
+  j.carryForward = isCF;
+  if(isCF && targetBDYear) j.bdYear = String(targetBDYear);
+  const row = [
+    j.id, j.year, j.type, j.index,
+    j.customer, j.project, j.contact||'', j.address||'',
+    j.clientTaxId||'', j.needsBilling, j.tuRac,
+    j.netReceived||'', j.status, j.billingStatus||'',
+    j.totalInstallments||'', j.note||'',
+    j.bdYear||'', j.carryForward,
+    j.contractAmount||'', j.endDate||''
+  ];
+  try {
+    if(j._row) await updateCell('Jobs', `A${j._row}:T${j._row}`, [row]);
+    showToast(isCF ? `CF ไปปี BD ${targetBDYear} เรียบร้อย` : 'เก็บไว้ปีนี้เรียบร้อย');
+    syncSummary();
+    renderDashboard();
+  } catch(e) { showToast('บันทึกไม่สำเร็จ: '+e.message,'error'); }
+}
+
+function extendEndDate(jobIdx) {
+  const j = DB.jobs.find(x=>x.index===jobIdx);
+  if(!j) return;
+  const newDate = prompt(`เลื่อน End Date สำหรับ ${j.customer}
+End Date ปัจจุบัน: ${j.endDate||'ไม่ได้กำหนด'}
+กรอก End Date ใหม่ (YYYY-MM-DD):`, j.endDate||'');
+  if(!newDate) return;
+  j.endDate = newDate;
+  j.carryForward = null; // reset so system re-evaluates
+  const row = [
+    j.id, j.year, j.type, j.index,
+    j.customer, j.project, j.contact||'', j.address||'',
+    j.clientTaxId||'', j.needsBilling, j.tuRac,
+    j.netReceived||'', j.status, j.billingStatus||'',
+    j.totalInstallments||'', j.note||'',
+    j.bdYear||'', '',
+    j.contractAmount||'', newDate
+  ];
+  updateCell('Jobs', `A${j._row}:T${j._row}`, [row])
+    .then(()=>{ showToast('เลื่อน End Date เรียบร้อย'); renderDashboard(); })
+    .catch(e=>showToast('บันทึกไม่สำเร็จ: '+e.message,'error'));
 }
 
 function updateCalcTotal() {
