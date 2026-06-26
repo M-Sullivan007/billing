@@ -769,6 +769,8 @@ function renderDashboard() {
     ? DB.jobs.filter(j=>j.bdYear==ST.bdYearFilter&&j.carryForward)
     : [];
   const activeJobs = DB.jobs.filter(j=>j.status==='Active');
+  // CF pending only when filtering by specific BD year
+  const cfPendingJobs = bdFilter ? DB.jobs.filter(j=>autoDetectCF(j)&&(j.bdYear==ST.bdYearFilter||!j.bdYear)) : [];
 
   // Confirmed amount using new contract amount logic
   const confirmedAmount = (jobs) => {
@@ -781,13 +783,15 @@ function renderDashboard() {
       },0);
   };
 
-  // CF jobs pending confirmation
-  const cfPending = DB.jobs.filter(j=>autoDetectCF(j));
+  // CF pending already computed above
   const sumINV = DB.docs.filter(d=>d.type==='INV').reduce((s,d)=>s+d.subtotal,0);
   const sumTR = DB.docs.filter(d=>d.type==='TR').reduce((s,d)=>s+d.subtotal,0);
 
   // Jobs needing action (Active + billing not Done/No Billing)
-  const actionJobs = DB.jobs.filter(j=>j.status==='Active'&&j.billingStatus&&j.billingStatus!=='Done'&&j.billingStatus!=='No Billing');
+  const actionJobs = (bdFilter
+    ? DB.jobs.filter(j=>j.bdYear==ST.bdYearFilter&&j.status==='Active')
+    : DB.jobs.filter(j=>j.status==='Active')
+  ).filter(j=>j.billingStatus&&j.billingStatus!=='Done'&&j.billingStatus!=='No Billing');
 
   // Section summary
   const sectionSummary = (jobs, label, color) => {
@@ -863,14 +867,14 @@ function renderDashboard() {
   </div>` : '';
 
   // CF pending confirmation section
-  const cfPendingSection = cfPending.length > 0 ? `
+  const cfPendingSection = cfPendingJobs.length > 0 ? `
   <div class="card" style="margin-bottom:16px;border-left:4px solid #DC2626;border:2px solid #FECACA">
     <div class="card-header" style="background:#FFF5F5">
       <h2 style="color:#DC2626">⚠️ รอ Confirm Carry Forward (${cfPending.length} งาน)</h2>
       <div style="font-size:12px;color:var(--text-3)">End Date ผ่านมาแล้ว และยังมียอดค้างอยู่</div>
     </div>
     <div style="padding:14px;display:flex;flex-direction:column;gap:12px">
-      ${cfPending.map(j=>{
+      ${cfPendingJobs.map(j=>{
         const cf=getCFAmount(j), tr=getJobTRCollected(j), contract=getJobContractAmount(j);
         const nextBD=(parseInt(j.bdYear)||getCurrentBDYear())+1;
         return`<div style="background:#fff;border:1px solid #FECACA;border-radius:10px;padding:14px">
@@ -1111,6 +1115,10 @@ async function saveEditJob(idx) {
     tuRac:             gc('ej-turac',             j.tuRac),
     needsBilling:      gc('ej-billing',           j.needsBilling),
     note:              gv('ej-note',              j.note),
+    bdYear:            gv('ej-bd-year',            j.bdYear||''),
+    carryForward:      gc('ej-carry-forward',       j.carryForward),
+    contractAmount:    parseFloat(gv('ej-contract', j.contractAmount||0))||0,
+    endDate:           gv('ej-enddate',             j.endDate||''),
   };
 
   // Validate required fields before saving
