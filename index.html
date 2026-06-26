@@ -409,7 +409,7 @@ async function graphPatch(url, body) {
 }
 
 async function getSiteAndDrive() {
-  if(SITE_ID && DRIVE_ID) return;
+  if(SITE_ID && DRIVE_ID) return; // Already cached, return immediately
   SITE_ID = CONFIG.siteId;
   // Try to get drive via site drives list
   try {
@@ -432,24 +432,26 @@ async function getSiteAndDrive() {
 }
 
 async function readSheet(sheetName) {
-  await getSiteAndDrive();
-  // Try with fileId first, fallback to path-based lookup
+  // getSiteAndDrive already called before batch load
+  const url = `/drives/${DRIVE_ID}/items/${CONFIG.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`;
+  const data = await graphGet(url);
+  return data.values || [];
+}
+
+async function readSheetSafe(sheetName) {
   try {
-    const url = `/drives/${DRIVE_ID}/items/${CONFIG.fileId}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`;
-    const data = await graphGet(url);
-    return data.values || [];
+    return await readSheet(sheetName);
   } catch(e) {
-    console.log('FileId lookup failed, trying by path...');
-    // Search for file by name
-    const search = await graphGet(`/drives/${DRIVE_ID}/root/search(q='MS_Sullivan_Database')`);
-    if(search.value && search.value.length > 0) {
-      const file = search.value.find(f => f.name.includes('MS_Sullivan')) || search.value[0];
-      CONFIG.fileId = file.id;
-      const url2 = `/drives/${DRIVE_ID}/items/${file.id}/workbook/worksheets/${encodeURIComponent(sheetName)}/usedRange`;
-      const data2 = await graphGet(url2);
-      return data2.values || [];
-    }
-    throw new Error('Cannot find Excel file: ' + e.message);
+    // Fallback: search by name
+    try {
+      const search = await graphGet(`/drives/${DRIVE_ID}/root/search(q='MS_Sullivan_Database')`);
+      if(search.value && search.value.length > 0) {
+        const file = search.value.find(f => f.name.includes('MS_Sullivan')) || search.value[0];
+        CONFIG.fileId = file.id;
+        return await readSheet(sheetName);
+      }
+    } catch(e2) {}
+    throw new Error('Cannot find sheet: ' + sheetName + ' — ' + e.message);
   }
 }
 
@@ -486,10 +488,16 @@ function xlDate(v) {
 }
 
 async function loadAllData() {
-  setContent('<div class="loading"><div class="spinner"></div> กำลังโหลดข้อมูลจาก SharePoint...</div>');
+  setContent('<div class="loading"><div class="spinner"></div> กำลังโหลดข้อมูล...</div>');
   try {
+    // Step 1: Get site & drive once
+    await getSiteAndDrive();
+
+    // Step 2: Fetch all 3 sheets in parallel (no sequential waiting)
     const [jobRows, docRows, ctrRows] = await Promise.all([
-      readSheet('Jobs'), readSheet('Documents'), readSheet('Counters')
+      readSheetSafe('Jobs'),
+      readSheetSafe('Documents'),
+      readSheetSafe('Counters')
     ]);
 
     // Parse Jobs (skip header row)
