@@ -714,14 +714,25 @@ function getJobContractAmount(j) {
   return firstQT ? firstQT.subtotal : 0;
 }
 function getJobTRCollected(j) { return DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='TR').reduce((s,d)=>s+d.netAmount,0); }
-function getJobINVSent(j) { return DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='INV').reduce((s,d)=>s+d.subtotal,0); }
+function getJobINVSent(j) { return DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='INV').reduce((s,d)=>s+d.netAmount,0); }
 function getJobINVPending(j) { return Math.max(0, getJobINVSent(j) - getJobTRCollected(j)); }
 function getJobUnbilled(j) { return Math.max(0, getJobContractAmount(j) - getJobINVSent(j)); }
 function getCFAmount(j) { return Math.max(0, getJobContractAmount(j) - getJobTRCollected(j)); }
+function getJobBDYear(j) {
+  // If bdYear set manually, use it
+  if(j.bdYear) return parseInt(j.bdYear);
+  // Auto calculate from job year: year 26 = BD 2026, year 25 = BD 2025
+  if(j.year) {
+    const y = parseInt(j.year);
+    return y < 100 ? 2000 + y : y;
+  }
+  return getCurrentBDYear();
+}
+
 function autoDetectCF(j) {
   if(!j.endDate) return false;
   if(j.carryForward === true || j.carryForward === false) return false;
-  const bdYear = parseInt(j.bdYear) || getCurrentBDYear();
+  const bdYear = getJobBDYear(j);
   const bdEnd = new Date(bdYear + '-09-30');
   return new Date(j.endDate) < new Date() && getCFAmount(j) > 0 && new Date(j.endDate) < bdEnd;
 }
@@ -743,7 +754,7 @@ function billingBadge(s) {
 
 function renderDashboard() {
   document.getElementById('page-title').textContent = 'Dashboard';
-  const bdYears = [...new Set(DB.jobs.map(j=>j.bdYear).filter(Boolean))].sort().reverse();
+  const bdYears = [...new Set(DB.jobs.map(j=>getJobBDYear(j)).filter(Boolean))].sort().reverse();
   const curBD = ST.bdYearFilter||'all';
   document.getElementById('topbar-right').innerHTML = `
     <div style="display:flex;align-items:center;gap:8px">
@@ -760,17 +771,17 @@ function renderDashboard() {
   const allLrnJobs = DB.jobs.filter(j=>j.type==='Learning');
   // Filter by BD year if selected — exclude carry forward from totals
   const advJobs = bdFilter
-    ? allAdvJobs.filter(j=>j.bdYear==ST.bdYearFilter&&!j.carryForward)
+    ? allAdvJobs.filter(j=>getJobBDYear(j)==ST.bdYearFilter&&!j.carryForward)
     : allAdvJobs;
   const lrnJobs = bdFilter
-    ? allLrnJobs.filter(j=>j.bdYear==ST.bdYearFilter&&!j.carryForward)
+    ? allLrnJobs.filter(j=>getJobBDYear(j)==ST.bdYearFilter&&!j.carryForward)
     : allLrnJobs;
   const carryJobs = bdFilter
-    ? DB.jobs.filter(j=>j.bdYear==ST.bdYearFilter&&j.carryForward)
+    ? DB.jobs.filter(j=>getJobBDYear(j)==ST.bdYearFilter&&j.carryForward)
     : [];
   const activeJobs = DB.jobs.filter(j=>j.status==='Active');
   // CF pending only when filtering by specific BD year
-  const cfPendingJobs = bdFilter ? DB.jobs.filter(j=>autoDetectCF(j)&&(j.bdYear==ST.bdYearFilter||!j.bdYear)) : [];
+  const cfPendingJobs = bdFilter ? DB.jobs.filter(j=>autoDetectCF(j)&&getJobBDYear(j)==ST.bdYearFilter) : [];
 
   // Confirmed amount using new contract amount logic
   const confirmedAmount = (jobs) => {
@@ -784,12 +795,12 @@ function renderDashboard() {
   };
 
   // CF pending already computed above
-  const sumINV = DB.docs.filter(d=>d.type==='INV').reduce((s,d)=>s+d.subtotal,0);
+  const sumINV = DB.docs.filter(d=>d.type==='INV').reduce((s,d)=>s+d.netAmount,0);
   const sumTR = DB.docs.filter(d=>d.type==='TR').reduce((s,d)=>s+d.netAmount,0);
 
   // Jobs needing action (Active + billing not Done/No Billing)
   const actionJobs = (bdFilter
-    ? DB.jobs.filter(j=>j.bdYear==ST.bdYearFilter&&j.status==='Active')
+    ? DB.jobs.filter(j=>getJobBDYear(j)==ST.bdYearFilter&&j.status==='Active')
     : DB.jobs.filter(j=>j.status==='Active')
   ).filter(j=>j.billingStatus&&j.billingStatus!=='Done'&&j.billingStatus!=='No Billing');
 
@@ -799,8 +810,8 @@ function renderDashboard() {
     const done = jobs.filter(j=>j.status==='Done').length;
     const declined = jobs.filter(j=>j.status==='Declined').length;
     const confirmed = confirmedAmount(jobs);
-    const inv = DB.docs.filter(d=>d.type==='INV'&&jobs.find(j=>j.index===d.jobIndex)).reduce((s,d)=>s+d.subtotal,0);
-    const tr = DB.docs.filter(d=>d.type==='TR'&&jobs.find(j=>j.index===d.jobIndex)).reduce((s,d)=>s+d.subtotal,0);
+    const inv = DB.docs.filter(d=>d.type==='INV'&&jobs.find(j=>j.index===d.jobIndex)).reduce((s,d)=>s+d.netAmount,0);
+    const tr = DB.docs.filter(d=>d.type==='TR'&&jobs.find(j=>j.index===d.jobIndex)).reduce((s,d)=>s+d.netAmount,0);
     const noBilling = jobs.filter(j=>j.billingStatus==='No Billing'||j.tuRac).length;
     return `<div class="card" style="border-top:3px solid ${color}">
       <div class="card-header">
