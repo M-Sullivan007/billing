@@ -1883,19 +1883,23 @@ function printDoc(docId) {
     <div style="clear:both"></div>
     ${doc.type!=='TR'?`<div class="print-footer"><strong>หมายเหตุ: บัญชีสำหรับการโอนชำระ</strong><br>${co.name}<br>${co.bank}</div>`:''}
     ${doc.type==='QT'||doc.type==='QQ' ? `
-    <div style="margin-top:24px">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-        <div style="text-align:center;font-size:10px">Prepared and authorized by:<br>(จัดทำและยืนยันความถูกต้องโดย)</div>
-        <div style="text-align:center;font-size:10px">Customer acceptance:<br>(รับทราบและอนุมัติ)</div>
+    <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <!-- LEFT: Company signature with absolute positioning -->
+      <div style="text-align:center">
+        <div style="font-size:10px;margin-bottom:6px">Prepared and authorized by:<br>(จัดทำและยืนยันความถูกต้องโดย)</div>
+        <div style="position:relative;height:110px">
+          <div style="position:absolute;bottom:0;left:0;right:0;text-align:center">
+            ${sigHtml}
+          </div>
+        </div>
+        <div style="border-top:1px solid #000;padding-top:4px;font-size:9.5px">( ${co.signer} )<br>${co.signerTitle}</div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:8px">
-        <div style="text-align:center">${sigHtml}</div>
-        <div style="height:100px"></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:8px">
-        <div style="text-align:center;border-top:1px solid #000;padding-top:4px;font-size:9.5px">( ${co.signer} )<br>${co.signerTitle}</div>
-        <div style="text-align:center;border-top:1px solid #000;padding-top:4px;font-size:9.5px">
-          ( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )<br>
+      <!-- RIGHT: Customer signature -->
+      <div style="text-align:center">
+        <div style="font-size:10px;margin-bottom:6px">Customer acceptance:<br>(รับทราบและอนุมัติ)</div>
+        <div style="height:110px"></div>
+        <div style="border-top:1px solid #000;padding-top:4px;font-size:9.5px">
+          ( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )<br>
           Signature (ลงลายมือชื่อ)<br>
           <span style="display:block;margin-top:4px">Date (วันที่) : ___________________</span>
         </div>
