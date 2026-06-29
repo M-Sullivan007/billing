@@ -1402,10 +1402,24 @@ async function syncSummary() {
 }
 
 async function saveNewJob() {
-  const type = document.getElementById('nj-type').value;
-  const customer = document.getElementById('nj-customer').value.trim();
-  const project = document.getElementById('nj-project').value.trim();
-  const taxId = document.getElementById('nj-taxid').value.trim();
+  // Read ALL form values BEFORE setContent clears the DOM
+  const gv = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const gc = id => { const el = document.getElementById(id); return el ? el.checked : false; };
+
+  const type = gv('nj-type');
+  const customer = gv('nj-customer').trim();
+  const project = gv('nj-project').trim();
+  const taxId = gv('nj-taxid').trim();
+  const contact = gv('nj-contact');
+  const address = gv('nj-address');
+  const netReceived = gv('nj-netreceived');
+  const status = gv('nj-status') || 'Active';
+  const note = gv('nj-note');
+  const contract = parseFloat(gv('nj-contract')) || '';
+  const endDate = gv('nj-enddate');
+  const needsBilling = gc('nj-billing');
+  const tuRac = gc('nj-turac');
+
   if(!customer||!project) { showToast('กรุณากรอกชื่อลูกค้าและโปรเจกต์','error'); return; }
   if(!taxId) { showToast('กรุณากรอกเลขประจำตัวผู้เสียภาษี','error'); return; }
 
@@ -1417,18 +1431,11 @@ async function saveNewJob() {
     const row = [
       jid, year, type, idx,
       customer, project,
-      document.getElementById('nj-contact').value,
-      document.getElementById('nj-address').value,
-      document.getElementById('nj-taxid').value,
-      document.getElementById('nj-billing').checked,
-      document.getElementById('nj-turac').checked,
-      document.getElementById('nj-netreceived').value||'',
-      document.getElementById('nj-status').value,
-      '', '', // billingStatus, totalInstallments
-      document.getElementById('nj-note').value,
-      '', false, // bdYear, carryForward
-      parseFloat(document.getElementById('nj-contract').value)||'',
-      document.getElementById('nj-enddate').value||''
+      contact, address, taxId,
+      needsBilling, tuRac, netReceived,
+      status, '', '', // billingStatus, totalInstallments
+      note, '', false, // bdYear, carryForward
+      contract, endDate
     ];
     await appendRow('Jobs', row);
     DB.jobs.push({ id:jid,year,type,index:idx,customer,project,contact:row[6],address:row[7],clientTaxId:row[8],needsBilling:row[9],tuRac:row[10],netReceived:row[11],status:row[12],note:row[13] });
