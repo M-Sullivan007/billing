@@ -537,6 +537,7 @@ async function loadAllData() {
         whtAmount: parseFloat(r[11])||0, netAmount: parseFloat(r[12])||0,
         installmentNo: parseInt(r[13])||0, installmentStatus: r[14]||'',
         items: tryParse(r[15]), note: r[16]||'',
+        ...(()=>{ try { const n=JSON.parse(r[16]||'{}'); return n.qqCustomer?{qqCustomer:n.qqCustomer,qqAddress:n.qqAddress,qqTaxId:n.qqTaxId}:{}; } catch(e){return {};} })(),
         _row: i+1
       });
     }
@@ -1524,7 +1525,12 @@ function renderEditDoc() {
 
 function renderDocForm(doc) {
   const isEdit = !!doc;
-  const job = doc ? DB.jobs.find(j=>j.index===doc.jobIndex) : (ST.prefillJob ? DB.jobs.find(j=>j.index===ST.prefillJob) : null);
+  let job = doc ? DB.jobs.find(j=>j.index===doc.jobIndex) : (ST.prefillJob ? DB.jobs.find(j=>j.index===ST.prefillJob) : null);
+  // For QQ without job, create placeholder job object
+  if(!job && doc && doc.type==='QQ') {
+    const qqInfo = (() => { try { return JSON.parse(doc.note||'{}'); } catch(e) { return {}; } })();
+    job = { customer: qqInfo.qqCustomer||doc.project||'-', address: qqInfo.qqAddress||'', contact:'', clientTaxId: qqInfo.qqTaxId||'', project: doc.project||'', index:'-' };
+  }
 
   setContent(`
   <div class="card">
@@ -1562,6 +1568,7 @@ function renderDocForm(doc) {
             <option value="">-- เลือกงาน --</option>
             ${DB.jobs.map(j=>`<option value="${j.index}" ${(job&&j.index===job.index)||(!job&&ST.prefillJob===j.index)?'selected':''}>${j.index} — ${j.customer}</option>`).join('')}
           </select>
+          ${!isEdit&&docType==='QQ'?`<div style="font-size:11px;color:var(--text-3);margin-top:4px">ไม่ต้องเลือกงานก็ได้สำหรับคู่เทียบ</div>`:''}
         </div>
         <div class="form-group">
           <label class="form-label">ชื่อโปรเจกต์</label>
@@ -1569,6 +1576,15 @@ function renderDocForm(doc) {
         </div>
       </div>
     </div>
+    ${(!isEdit&&docType==='QQ')?`
+    <div class="form-section">
+      <div class="form-section-title">ข้อมูลลูกค้า (กรณีไม่ผูก Job)</div>
+      <div class="form-grid">
+        <div class="form-group full"><label class="form-label">ชื่อลูกค้า</label><input class="form-input" id="f-qq-customer" placeholder="ชื่อบริษัท / ลูกค้า"></div>
+        <div class="form-group full"><label class="form-label">ที่อยู่</label><textarea class="form-input" id="f-qq-address" rows="2" placeholder="ที่อยู่ลูกค้า"></textarea></div>
+        <div class="form-group"><label class="form-label">เลขประจำตัวผู้เสียภาษี</label><input class="form-input" id="f-qq-taxid" placeholder="0000000000000"></div>
+      </div>
+    </div>`:''}
     <div class="form-section">
       <div class="form-section-title">รายการ</div>
       <table class="items-tbl">
@@ -1693,6 +1709,8 @@ async function saveNewDoc() {
   const type = document.getElementById('f-type').value;
   const date = document.getElementById('f-date').value;
   const jobIdx = document.getElementById('f-job')?.value||ST.prefillJob||'';
+  const jobObj = DB.jobs.find(j=>j.index===jobIdx);
+  if(!jobObj && type !== 'QQ') { showToast('กรุณาเลือกงาน','error'); return; }
   const items = getFormItems();
   if(!items.length) { showToast('กรุณาเพิ่มรายการอย่างน้อย 1 รายการ','error'); return; }
 
@@ -1707,6 +1725,9 @@ async function saveNewDoc() {
   try {
     const docId = await generateDocId(type, date);
     const did = 'D'+String(DB.docs.length+1).padStart(4,'0');
+    const qqCustomer = document.getElementById('f-qq-customer')?.value || '';
+    const qqAddress = document.getElementById('f-qq-address')?.value || '';
+    const qqTaxId = document.getElementById('f-qq-taxid')?.value || '';
     const row = [
       did, docId, type, jobIdx, date,
       document.getElementById('f-duedate')?.value||'',
@@ -1715,7 +1736,8 @@ async function saveNewDoc() {
       sub, vat, wr, wht, net,
       document.getElementById('f-installment-no')?.value||'',
       document.getElementById('f-installment-status')?.value||'',
-      JSON.stringify(items), ''
+      JSON.stringify(items),
+      qqCustomer ? JSON.stringify({qqCustomer,qqAddress,qqTaxId}) : ''
     ];
     await appendRow('Documents', row);
     const newDoc = { id:did,docId,type,jobIndex:jobIdx,date,dueDate:row[5],refDocId:row[6],project:row[7],subtotal:sub,vat,whtRate:wr,whtAmount:wht,netAmount:net,note:'',items };
@@ -1779,7 +1801,12 @@ const DOC_TITLES = {
 function printDoc(docId) {
   const doc = DB.docs.find(d=>d.docId===docId);
   if(!doc) { showToast('ไม่พบเอกสาร','error'); return; }
-  const job = DB.jobs.find(j=>j.index===doc.jobIndex)||{};
+  let job = DB.jobs.find(j=>j.index===doc.jobIndex);
+  if(!job && doc.type==='QQ') {
+    const qqInfo = (() => { try { return JSON.parse(doc.note||'{}'); } catch(e) { return {}; } })();
+    job = { customer: qqInfo.qqCustomer||doc.project||'-', address: qqInfo.qqAddress||'', contact:'', clientTaxId: qqInfo.qqTaxId||'', project: doc.project||'', index:'-' };
+  }
+  job = job || {};
   const sub = doc.subtotal, vat = doc.vat, wht = doc.whtAmount, net = doc.netAmount;
   const coInfo = JSON.parse(localStorage.getItem('ms_company')||'{}');
   const co = {...COMPANY,...coInfo};
@@ -1856,7 +1883,7 @@ function printDoc(docId) {
     <div style="clear:both"></div>
     ${doc.type!=='TR'?`<div class="print-footer"><strong>หมายเหตุ: บัญชีสำหรับการโอนชำระ</strong><br>${co.name}<br>${co.bank}</div>`:''}
     ${doc.type==='QT'||doc.type==='QQ' ? `
-    <div style="display:flex;justify-content:space-between;margin-top:24px">
+    <div style="display:flex;justify-content:space-between;margin-top:24px;align-items:flex-end">
       <div style="text-align:center;width:45%">
         <div style="font-size:10px;margin-bottom:4px">Prepared and authorized by:<br>(จัดทำและยืนยันความถูกต้องโดย)</div>
         ${sigHtml}
