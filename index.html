@@ -215,7 +215,7 @@ select.form-input{cursor:pointer}
   .print-sign{display:flex;justify-content:space-between;margin-top:24px}
   .print-sign-box{text-align:center;width:210px}
   .print-sign-line{border-top:1px solid #000;padding-top:4px;margin-top:4px;font-size:9.5px}
-  .print-sig-img{width:100%;max-height:70px;object-fit:contain;display:block;margin:0 auto 2px}
+  .print-sig-img{width:100%;max-height:100px;object-fit:contain;display:block;margin:0 auto 2px}
 }
 </style>
 </head>
@@ -1883,15 +1883,17 @@ function printDoc(docId) {
     <div style="clear:both"></div>
     ${doc.type!=='TR'?`<div class="print-footer"><strong>หมายเหตุ: บัญชีสำหรับการโอนชำระ</strong><br>${co.name}<br>${co.bank}</div>`:''}
     ${doc.type==='QT'||doc.type==='QQ' ? `
-    <div style="display:flex;justify-content:space-between;margin-top:24px;align-items:flex-end">
-      <div style="text-align:center;width:45%">
+    <div style="display:flex;justify-content:space-between;margin-top:24px">
+      <div style="text-align:center;width:45%;display:flex;flex-direction:column">
         <div style="font-size:10px;margin-bottom:4px">Prepared and authorized by:<br>(จัดทำและยืนยันความถูกต้องโดย)</div>
-        ${sigHtml}
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;min-height:100px">
+          ${sigHtml}
+        </div>
         <div style="border-top:1px solid #000;padding-top:4px;margin-top:4px;font-size:9.5px">( ${co.signer} )<br>${co.signerTitle}</div>
       </div>
-      <div style="text-align:center;width:45%">
+      <div style="text-align:center;width:45%;display:flex;flex-direction:column">
         <div style="font-size:10px;margin-bottom:4px">Customer acceptance:<br>(รับทราบและอนุมัติ)</div>
-        <div style="height:52px"></div>
+        <div style="flex:1;min-height:100px"></div>
         <div style="border-top:1px solid #000;padding-top:4px;margin-top:4px;font-size:9.5px">
           ( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )<br>
           Signature (ลงลายมือชื่อ)<br>
