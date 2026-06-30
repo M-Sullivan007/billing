@@ -1711,36 +1711,43 @@ function getFormItems() {
 }
 
 async function saveNewDoc() {
-  const type = document.getElementById('f-type').value;
-  const date = document.getElementById('f-date').value;
-  const jobIdx = document.getElementById('f-job')?.value||ST.prefillJob||'';
+  // Read ALL form values BEFORE setContent clears the DOM
+  const gv = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const gc = id => { const el = document.getElementById(id); return el ? el.checked : false; };
+
+  const type = gv('f-type');
+  const date = gv('f-date');
+  const jobIdx = gv('f-job')||ST.prefillJob||'';
   const jobObj = DB.jobs.find(j=>j.index===jobIdx);
   if(!jobObj && type !== 'QQ') { showToast('กรุณาเลือกงาน','error'); return; }
   const items = getFormItems();
   if(!items.length) { showToast('กรุณาเพิ่มรายการอย่างน้อย 1 รายการ','error'); return; }
 
   const sub = items.reduce((s,i)=>s+(i.qty*i.unit),0);
-  const uv = document.getElementById('f-vat').checked;
-  const wr = parseInt(document.getElementById('f-wht').value||0);
+  const uv = gc('f-vat');
+  const wr = parseInt(gv('f-wht')||0);
   const vat = uv?sub*0.07:0;
   const wht = sub*(wr/100);
   const net = sub+vat-wht;
+
+  const dueDate = gv('f-duedate');
+  const refDoc = gv('f-refdoc');
+  const projectName = gv('f-project');
+  const instNo = gv('f-installment-no');
+  const instStatus = gv('f-installment-status');
+  const qqCustomer = gv('f-qq-customer');
+  const qqAddress = gv('f-qq-address');
+  const qqTaxId = gv('f-qq-taxid');
 
   setContent('<div class="loading"><div class="spinner"></div> กำลังบันทึกและ generate เลขที่...</div>');
   try {
     const docId = await generateDocId(type, date);
     const did = 'D'+String(DB.docs.length+1).padStart(4,'0');
-    const qqCustomer = document.getElementById('f-qq-customer')?.value || '';
-    const qqAddress = document.getElementById('f-qq-address')?.value || '';
-    const qqTaxId = document.getElementById('f-qq-taxid')?.value || '';
     const row = [
       did, docId, type, jobIdx, date,
-      document.getElementById('f-duedate')?.value||'',
-      document.getElementById('f-refdoc')?.value||'',
-      document.getElementById('f-project')?.value||'',
+      dueDate, refDoc, projectName,
       sub, vat, wr, wht, net,
-      document.getElementById('f-installment-no')?.value||'',
-      document.getElementById('f-installment-status')?.value||'',
+      instNo, instStatus,
       JSON.stringify(items),
       qqCustomer ? JSON.stringify({qqCustomer,qqAddress,qqTaxId}) : ''
     ];
@@ -1762,26 +1769,30 @@ async function updateDoc() {
   const items = getFormItems();
   if(!items.length) { showToast('กรุณาเพิ่มรายการ','error'); return; }
 
+  // Read ALL form values BEFORE setContent clears the DOM
+  const gv = (id, def='') => { const el = document.getElementById(id); return el ? el.value : def; };
+  const gc = (id, def=true) => { const el = document.getElementById(id); return el ? el.checked : def; };
+
   const sub = items.reduce((s,i)=>s+(i.qty*i.unit),0);
-  const vatEl = document.getElementById('f-vat');
-  const whtEl = document.getElementById('f-wht');
-  const uv = vatEl ? vatEl.checked : true;
-  const wr = whtEl ? parseInt(whtEl.value||0) : 0;
+  const uv = gc('f-vat', true);
+  const wr = parseInt(gv('f-wht','0'))||0;
   const vat = uv?sub*0.07:0;
   const wht = sub*(wr/100);
   const net = sub+vat-wht;
 
-  const gv = (id, def='') => { const el = document.getElementById(id); return el ? el.value : def; };
+  const date = gv('f-date', doc.date);
+  const dueDate = gv('f-duedate','');
+  const refDoc = gv('f-refdoc','');
+  const projectName = gv('f-project','');
+  const instNo = gv('f-installment-no','');
+  const instStat = gv('f-installment-status','');
 
   setContent('<div class="loading"><div class="spinner"></div> กำลังบันทึก...</div>');
   try {
     const row = doc._row;
-    const date = gv('f-date', doc.date);
-    const instNo = gv('f-installment-no','');
-    const instStat = gv('f-installment-status','');
     const values = [
       doc.id, doc.docId, doc.type, doc.jobIndex, date,
-      gv('f-duedate',''), gv('f-refdoc',''), gv('f-project',''),
+      dueDate, refDoc, projectName,
       sub, vat, wr, wht, net,
       instNo, instStat,
       JSON.stringify(items), doc.note
