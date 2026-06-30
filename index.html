@@ -1525,6 +1525,7 @@ function renderEditDoc() {
 
 function renderDocForm(doc) {
   const isEdit = !!doc;
+  const docType = doc ? doc.type : (ST.preselDocType || 'QT');
   let job = doc ? DB.jobs.find(j=>j.index===doc.jobIndex) : (ST.prefillJob ? DB.jobs.find(j=>j.index===ST.prefillJob) : null);
   // For QQ without job, create placeholder job object
   if(!job && doc && doc.type==='QQ') {
