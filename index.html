@@ -518,6 +518,7 @@ async function loadAllData() {
         note: r[15]||'',
         bdYear: r[16]||'', carryForward: r[17]===true||r[17]==='TRUE'||r[17]===1,
         contractAmount: parseFloat(r[18])||0, endDate: r[19]||'',
+        legalName: r[20]||'',
         _row: i+1
       });
     }
@@ -1060,6 +1061,7 @@ function renderEditJob() {
         <div class="form-group full"><label class="form-label">ชื่อโปรเจกต์</label><input class="form-input" id="ej-project" value="${j.project||''}"></div>
         <div class="form-group"><label class="form-label">ผู้ติดต่อ</label><input class="form-input" id="ej-contact" value="${j.contact||''}"></div>
         <div class="form-group"><label class="form-label">เลขประจำตัวผู้เสียภาษี</label><input class="form-input" id="ej-taxid" value="${j.clientTaxId||''}"></div>
+        <div class="form-group full"><label class="form-label">ชื่อเต็มบริษัท (สำหรับพิมพ์เอกสาร)</label><input class="form-input" id="ej-legalname" value="${j.legalName||''}" placeholder="เช่น บริษัท ผลิตไฟฟ้า จำกัด (มหาชน)"></div>
         <div class="form-group full"><label class="form-label">ที่อยู่</label><textarea class="form-input" id="ej-address" rows="2">${j.address||''}</textarea></div>
       </div>
     </div>
@@ -1152,6 +1154,7 @@ async function saveEditJob(idx) {
     carryForward:      gc('ej-carry-forward',       j.carryForward),
     contractAmount:    parseFloat(gv('ej-contract', j.contractAmount||0))||0,
     endDate:           gv('ej-enddate',             j.endDate||''),
+    legalName:         gv('ej-legalname',           j.legalName||''),
   };
 
   // Validate required fields before saving
@@ -1172,9 +1175,10 @@ async function saveEditJob(idx) {
       updated.netReceived||'', updated.status, updated.billingStatus||'',
       updated.totalInstallments||'', updated.note||'',
       updated.bdYear||'', updated.carryForward||false,
-      updated.contractAmount||'', updated.endDate||''
+      updated.contractAmount||'', updated.endDate||'',
+      updated.legalName||''
     ];
-    if(j._row) await updateCell('Jobs', `A${j._row}:T${j._row}`, [row]);
+    if(j._row) await updateCell('Jobs', `A${j._row}:U${j._row}`, [row]);
     Object.assign(j, updated);
     showToast('บันทึกสำเร็จ!');
     ST.curJob = idx;
@@ -1842,7 +1846,7 @@ function printDoc(docId) {
     <table style="width:auto;margin-bottom:10px;font-size:10px;border-collapse:collapse">
       <tr>
         <td style="padding:2px 12px 2px 0;font-weight:600;vertical-align:top;white-space:nowrap">Customer Name (ชื่อ)</td>
-        <td style="padding:2px 0;vertical-align:top">${job.customer||''}</td>
+        <td style="padding:2px 0;vertical-align:top">${job.legalName||job.customer||''}</td>
       </tr>
       <tr>
         <td style="padding:2px 12px 2px 0;font-weight:600;vertical-align:top;white-space:nowrap">Address (ที่อยู่)</td>
