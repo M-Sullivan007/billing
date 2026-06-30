@@ -992,9 +992,8 @@ function renderJobs() {
 
   const jobRow = j => {
     const docs = getDocsByJob(j.index);
-    // Show value from first QT only (= actual project value)
-    const firstQT = docs.filter(d=>d.type==='QT').sort((a,b)=>a.date.localeCompare(b.date))[0];
-    const qtAmt = firstQT ? firstQT.subtotal : 0;
+    // Show contract amount (net, after tax) - use same logic as getJobContractAmount
+    const qtAmt = getJobContractAmount(j);
     // For No Billing/TU-RAC show net_received instead
     const isGovt = j.billingStatus==='No Billing' || j.tuRac;
     const displayAmt = isGovt ? (parseFloat(j.netReceived)||0) : qtAmt;
