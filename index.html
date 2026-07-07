@@ -1652,7 +1652,9 @@ function onTypeChange() {
   const t = document.getElementById('f-type')?.value;
   const dd = document.getElementById('due-date-group');
   const rd = document.getElementById('ref-doc-group');
+  const qq = document.getElementById('qq-fields-section');
   if(dd) dd.style.display = t==='INV' ? 'flex' : 'none';
+  if(qq) qq.style.display = t==='QQ' ? 'block' : 'none';
   if(rd) rd.style.display = (t==='INV'||t==='TR') ? 'flex' : 'none';
 }
 
