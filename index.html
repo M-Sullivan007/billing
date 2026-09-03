@@ -1589,6 +1589,12 @@ function renderDocForm(doc) {
         <div class="form-group"><label class="form-label">เลขประจำตัวผู้เสียภาษี</label><input class="form-input" id="f-qq-taxid" placeholder="0000000000000"></div>
       </div>
     </div>`:''}
+    <div style="padding:0 0 12px 0">
+      <div style="display:flex;align-items:center;gap:7px;font-size:13px">
+        <label style="font-size:12px;color:var(--text-2);white-space:nowrap;font-weight:500">Payment Term:</label>
+        <input class="form-input" id="f-payment-term" value="${doc&&doc.paymentTerm||''}" placeholder="เช่น งวดที่ 1/3 - 40% | วันครบกำหนดชำระ: 25 ก.ย. 2569">
+      </div>
+    </div>
     <div id="installment-pct-section" style="display:none">
     <div class="card" style="margin-bottom:12px;border-left:4px solid var(--gold);background:#FFFBF0">
       <div style="padding:14px">
