@@ -1801,6 +1801,7 @@ async function saveNewDoc() {
   const projectName = gv('f-project');
   const instNo = gv('f-installment-no');
   const instStatus = gv('f-installment-status');
+  const instAmount = parseFloat(gv('f-installment-amount'))||0;
   const qqCustomer = gv('f-qq-customer');
   const qqContact = gv('f-qq-contact');
   const qqPhone = gv('f-qq-phone');
