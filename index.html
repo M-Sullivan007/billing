@@ -1821,7 +1821,7 @@ async function saveNewDoc() {
       qqCustomer ? JSON.stringify({qqCustomer,qqContact,qqPhone,qqAddress,qqTaxId,instAmt:instAmount}) : (instAmount ? JSON.stringify({instAmt:instAmount}) : '')
     ];
     await appendRow('Documents', row);
-    const newDoc = { id:did,docId,type,jobIndex:jobIdx,date,dueDate:row[5],refDocId:row[6],project:row[7],subtotal:sub,vat,whtRate:wr,whtAmount:wht,netAmount:net,note:'',items };
+    const newDoc = { id:did,docId,type,jobIndex:jobIdx,date,dueDate:row[5],refDocId:row[6],project:row[7],subtotal:sub,vat,whtRate:wr,whtAmount:wht,netAmount:net,note:'',items,installmentNo:parseInt(instNo)||0,installmentStatus:instStatus,installmentAmount:instAmount||0 };
     DB.docs.push(newDoc);
     ST.prefillJob = null;
     showToast(`บันทึกสำเร็จ! เลขที่: ${docId}`);
