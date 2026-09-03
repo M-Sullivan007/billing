@@ -538,7 +538,7 @@ async function loadAllData() {
         whtAmount: parseFloat(r[11])||0, netAmount: parseFloat(r[12])||0,
         installmentNo: parseInt(r[13])||0, installmentStatus: r[14]||'',
         items: tryParse(r[15]), note: r[16]||'',
-        ...(()=>{ try { const n=JSON.parse(r[16]||'{}'); return { ...(n.qqCustomer?{qqCustomer:n.qqCustomer,qqContact:n.qqContact,qqPhone:n.qqPhone,qqAddress:n.qqAddress,qqTaxId:n.qqTaxId}:{}), ...(n.instAmt?{installmentAmount:n.instAmt}:{}) }; } catch(e){return {};} })(),
+        ...(()=>{ try { const n=JSON.parse(r[16]||'{}'); return { ...(n.qqCustomer?{qqCustomer:n.qqCustomer,qqContact:n.qqContact,qqPhone:n.qqPhone,qqAddress:n.qqAddress,qqTaxId:n.qqTaxId}:{}), ...(n.instAmt?{installmentAmount:n.instAmt}:{}), ...(n.paymentTerm?{paymentTerm:n.paymentTerm}:{}) }; } catch(e){return {};} })(),
         _row: i+1
       });
     }
@@ -1435,7 +1435,7 @@ async function saveNewJob() {
     const row = [
       jid, year, type, idx,
       customer, project,
-      contact, address, taxId,
+      contact, address, "'" + taxId,
       needsBilling, tuRac, netReceived,
       status, '', '', // billingStatus, totalInstallments
       note, '', false, // bdYear, carryForward
@@ -1733,20 +1733,31 @@ function applyInstallmentPct() {
   const job = DB.jobs.find(j=>j.index===jobIdx);
   if(!job) return;
 
-  // Get QT for this job
+  const instNo = document.getElementById('f-installment-no')?.value || '1';
   const firstQT = DB.docs.filter(d=>d.jobIndex===jobIdx&&d.type==='QT')
     .sort((a,b)=>a.date.localeCompare(b.date))[0];
   if(!firstQT) { showToast('ไม่พบใบเสนอราคา (QT) ของงานนี้','error'); return; }
 
-  // Calculate installment net amount (from QT net)
+  // Calculate subtotal for this installment (from QT subtotal)
+  const instSub = Math.round(firstQT.subtotal * pct / 100);
   const instNet = Math.round(firstQT.netAmount * pct / 100);
 
-  // Only fill the installment-amount field - do NOT touch item rows
+  // Clear all existing rows and create single row for this installment
+  const tb = document.getElementById('items-body');
+  if(tb) {
+    tb.innerHTML = '';
+    // Create one row with installment description
+    const desc = 'ค่าบริการตาม' + (job.project||'โครงการ') + ' - งวดที่ ' + instNo + ' (' + pct + '%)\nตามใบเสนอราคาเลขที่ ' + (firstQT.docId||'');
+    addItemRow(desc, 1, instSub);
+    calcTotals();
+  }
+
+  // Fill installment-amount with net amount
   const instAmountEl = document.getElementById('f-installment-amount');
   if(instAmountEl) instAmountEl.value = instNet;
 
   const resultEl = document.getElementById('pct-result');
-  if(resultEl) resultEl.textContent = '→ ยอดชำระงวดนี้ ' + fmtN(instNet) + ' ฿';
+  if(resultEl) resultEl.textContent = '→ subtotal ' + fmtN(instSub) + ' | net ' + fmtN(instNet) + ' ฿';
 }
 
 function fillJobData() {
@@ -1802,6 +1813,7 @@ async function saveNewDoc() {
   const instNo = gv('f-installment-no');
   const instStatus = gv('f-installment-status');
   const instAmount = parseFloat(gv('f-installment-amount'))||0;
+  const paymentTerm = gv('f-payment-term');
   const qqCustomer = gv('f-qq-customer');
   const qqContact = gv('f-qq-contact');
   const qqPhone = gv('f-qq-phone');
@@ -1818,10 +1830,10 @@ async function saveNewDoc() {
       sub, vat, wr, wht, net,
       instNo, instStatus,
       JSON.stringify(items),
-      qqCustomer ? JSON.stringify({qqCustomer,qqContact,qqPhone,qqAddress,qqTaxId,instAmt:instAmount}) : (instAmount ? JSON.stringify({instAmt:instAmount}) : '')
+      qqCustomer ? JSON.stringify({qqCustomer,qqContact,qqPhone,qqAddress,qqTaxId,instAmt:instAmount,paymentTerm}) : JSON.stringify({instAmt:instAmount||0,paymentTerm})
     ];
     await appendRow('Documents', row);
-    const newDoc = { id:did,docId,type,jobIndex:jobIdx,date,dueDate:row[5],refDocId:row[6],project:row[7],subtotal:sub,vat,whtRate:wr,whtAmount:wht,netAmount:net,note:'',items,installmentNo:parseInt(instNo)||0,installmentStatus:instStatus,installmentAmount:instAmount||0 };
+    const newDoc = { id:did,docId,type,jobIndex:jobIdx,date,dueDate:row[5],refDocId:row[6],project:row[7],subtotal:sub,vat,whtRate:wr,whtAmount:wht,netAmount:net,note:'',items,installmentNo:parseInt(instNo)||0,installmentStatus:instStatus,installmentAmount:instAmount||0,paymentTerm:paymentTerm||'' };
     DB.docs.push(newDoc);
     ST.prefillJob = null;
     showToast(`บันทึกสำเร็จ! เลขที่: ${docId}`);
@@ -1856,6 +1868,7 @@ async function updateDoc() {
   const instNo = gv('f-installment-no','');
   const instStat = gv('f-installment-status','');
   const instAmount = parseFloat(gv('f-installment-amount',''))||0;
+  const paymentTerm = gv('f-payment-term','');
 
   setContent('<div class="loading"><div class="spinner"></div> กำลังบันทึก...</div>');
   try {
@@ -1866,10 +1879,10 @@ async function updateDoc() {
       sub, vat, wr, wht, net,
       instNo, instStat,
       JSON.stringify(items),
-      instAmount ? JSON.stringify({instAmt:instAmount}) : (doc.note||'')
+      JSON.stringify({instAmt:instAmount||0, paymentTerm: paymentTerm||doc.paymentTerm||''})
     ];
     if(row) await updateCell('Documents', `A${row}:Q${row}`, [values]);
-    Object.assign(doc, { date, dueDate, refDocId:refDoc, project:projectName, items, subtotal:sub, vat, whtRate:wr, whtAmount:wht, netAmount:net, installmentNo:parseInt(instNo)||0, installmentStatus:instStat, installmentAmount:instAmount||0 });
+    Object.assign(doc, { date, dueDate, refDocId:refDoc, project:projectName, items, subtotal:sub, vat, whtRate:wr, whtAmount:wht, netAmount:net, installmentNo:parseInt(instNo)||0, installmentStatus:instStat, installmentAmount:instAmount||0, paymentTerm:paymentTerm||doc.paymentTerm||'' });
     showToast('บันทึกการแก้ไขสำเร็จ!');
     goBack();
   } catch(e) { showToast('บันทึกไม่สำเร็จ: '+e.message,'error'); }
@@ -1946,6 +1959,10 @@ function printDoc(docId) {
         <td style="padding:2px 12px 2px 0;font-weight:600;vertical-align:top;white-space:nowrap">เลขประจำตัวผู้เสียภาษี</td>
         <td style="padding:2px 0;vertical-align:top">${job.clientTaxId||''}</td>
       </tr>
+      ${doc.paymentTerm?`<tr>
+        <td style="padding:2px 12px 2px 0;font-weight:600;vertical-align:top;white-space:nowrap">Payment Term (งวดชำระ)</td>
+        <td style="padding:2px 0;vertical-align:top;font-weight:500;color:#1A3A5C">${doc.paymentTerm}</td>
+      </tr>`:''}
     </table>
     <table class="print-table">
       <thead><tr><th style="width:6%">No.</th><th>รายการ</th><th style="width:10%;text-align:center">จำนวน</th><th style="width:14%;text-align:right">หน่วยละ</th><th style="width:14%;text-align:right">ราคา</th></tr></thead>
