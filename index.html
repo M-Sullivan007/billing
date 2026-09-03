@@ -1982,14 +1982,7 @@ function printDoc(docId) {
         ${wht>0?`<div class="print-total-row"><span>ภาษีหัก ณ ที่จ่าย (${doc.whtRate}%)</span><span>${fmtN(wht)}</span></div>`:''}
         <div class="print-total-row net"><span>สุทธิ</span><span>${fmtN(net)}</span></div>
         <div style="font-size:9.5px;color:#444;margin-top:4px;text-align:left">(${numThai(net)})</div>
-        ${doc.installmentAmount?`
-        <div style="margin-top:14px;padding:12px 14px;background:#fff;border:2px solid #000;border-radius:8px;text-align:center">
-          <div style="font-size:10px;color:#000;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">
-            ยอดที่ต้องชำระงวดที่ ${doc.installmentNo||'—'} (${Math.round((doc.installmentAmount/doc.netAmount)*100)}%) — ${doc.installmentStatus||''}
-          </div>
-          <div style="font-size:22px;font-weight:700;color:#000">${fmtN(doc.installmentAmount)} ฿</div>
-          <div style="font-size:10px;color:#333;margin-top:2px">(${numThai(doc.installmentAmount)})</div>
-        </div>`:''}
+
       </div>
     </div>
     <div style="clear:both"></div>
