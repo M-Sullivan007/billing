@@ -1589,6 +1589,27 @@ function renderDocForm(doc) {
         <div class="form-group"><label class="form-label">เลขประจำตัวผู้เสียภาษี</label><input class="form-input" id="f-qq-taxid" placeholder="0000000000000"></div>
       </div>
     </div>`:''}
+    <div id="installment-pct-section" style="display:${docType==='INV'?'block':'none'}">
+    <div class="card" style="margin-bottom:12px;border-left:4px solid var(--gold);background:#FFFBF0">
+      <div style="padding:14px">
+        <div style="font-size:12px;font-weight:600;color:#92400E;margin-bottom:10px">💰 คำนวณยอดจาก QT (ไม่บังคับ)</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="font-size:12px;color:var(--text-2)">ยอด QT:</div>
+          <div style="font-size:14px;font-weight:700;color:var(--navy)" id="qt-ref-amount">— เลือกงานก่อน —</div>
+          <div style="font-size:12px;color:var(--text-2);margin-left:8px">คิดงวดนี้</div>
+          <input type="number" id="installment-pct" min="1" max="100" placeholder="เช่น 40"
+            style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:Sarabun,sans-serif"
+            oninput="applyInstallmentPct()">
+          <div style="font-size:12px;color:var(--text-2)">%</div>
+          <button onclick="applyInstallmentPct()" type="button"
+            style="padding:6px 14px;background:var(--gold);color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-family:Sarabun,sans-serif">
+            คำนวณ
+          </button>
+          <div style="font-size:13px;font-weight:600;color:var(--green)" id="pct-result"></div>
+        </div>
+      </div>
+    </div>
+    </div>
     <div class="form-section">
       <div class="form-section-title">รายการ</div>
       <table class="items-tbl">
@@ -1651,8 +1672,10 @@ function onTypeChange() {
   const dd = document.getElementById('due-date-group');
   const rd = document.getElementById('ref-doc-group');
   const qq = document.getElementById('qq-fields-section');
+  const pct = document.getElementById('installment-pct-section');
   if(dd) dd.style.display = t==='INV' ? 'flex' : 'none';
   if(qq) qq.style.display = t==='QQ' ? 'block' : 'none';
+  if(pct) pct.style.display = t==='INV' ? 'block' : 'none';
   if(rd) rd.style.display = (t==='INV'||t==='TR') ? 'flex' : 'none';
 }
 
@@ -1697,6 +1720,36 @@ function calcTotals() {
   if(ts('t-wht-row')) ts('t-wht-row').style.display = wr>0?'flex':'none';
 }
 
+function applyInstallmentPct() {
+  const pct = parseFloat(document.getElementById('installment-pct')?.value) || 0;
+  if(!pct) return;
+  const jobIdx = document.getElementById('f-job')?.value;
+  if(!jobIdx) { showToast('กรุณาเลือกงานก่อน','error'); return; }
+  const job = DB.jobs.find(j=>j.index===jobIdx);
+  if(!job) return;
+
+  // Get QT subtotal for this job
+  const firstQT = DB.docs.filter(d=>d.jobIndex===jobIdx&&d.type==='QT')
+    .sort((a,b)=>a.date.localeCompare(b.date))[0];
+  if(!firstQT) { showToast('ไม่พบใบเสนอราคา (QT) ของงานนี้','error'); return; }
+
+  const qtSub = firstQT.subtotal;
+  const instSub = Math.round(qtSub * pct / 100);
+
+  // Apply to first item row
+  const rows = document.querySelectorAll('#items-body tr');
+  if(rows.length > 0) {
+    const unitInput = rows[0].querySelectorAll('input')[1];
+    if(unitInput) {
+      unitInput.value = instSub;
+      calcTotals();
+    }
+  }
+
+  const resultEl = document.getElementById('pct-result');
+  if(resultEl) resultEl.textContent = '→ ' + fmtN(instSub) + ' ฿';
+}
+
 function fillJobData() {
   const idx = document.getElementById('f-job')?.value;
   if(!idx) return;
@@ -1704,6 +1757,13 @@ function fillJobData() {
   if(!j) return;
   const fp = id => document.getElementById(id);
   if(fp('f-project')&&!fp('f-project').value) fp('f-project').value = j.project;
+  // Update QT ref amount for installment calculator
+  const qtAmountEl = document.getElementById('qt-ref-amount');
+  if(qtAmountEl && j) {
+    const firstQT = DB.docs.filter(d=>d.jobIndex===j.index&&d.type==='QT')
+      .sort((a,b)=>a.date.localeCompare(b.date))[0];
+    qtAmountEl.textContent = firstQT ? fmtN(firstQT.subtotal)+' ฿ (subtotal)' : 'ไม่พบ QT';
+  }
 }
 
 function getFormItems() {
@@ -1945,17 +2005,46 @@ function printDoc(docId) {
       </div>
     </div>`}
   </div>`;
-  setTimeout(() => {
-    // Tip for removing browser header/footer
-    const tip = document.createElement('div');
-    tip.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1A3A5C;color:#fff;padding:10px 18px;border-radius:8px;font-size:12px;z-index:9999;font-family:Sarabun,sans-serif;box-shadow:0 4px 12px rgba(0,0,0,0.3)';
-    tip.innerHTML = '💡 เพื่อซ่อน URL และวันที่: เปิด "More settings" แล้วปิด "Headers and footers"';
-    document.body.appendChild(tip);
+  // Show print options dialog
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9998;display:flex;align-items:center;justify-content:center;font-family:Sarabun,sans-serif';
+  
+  let showSig = true;
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:28px 32px;min-width:320px;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+      <div style="font-size:16px;font-weight:600;color:#1A3A5C;margin-bottom:20px">⚙️ ตั้งค่าก่อนพิมพ์</div>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:16px;font-size:14px">
+        <input type="checkbox" id="toggle-sig" checked style="width:16px;height:16px;cursor:pointer">
+        แสดงลายเซ็น
+      </label>
+      <div style="font-size:11px;color:#8492A6;margin-bottom:20px;padding:10px;background:#F8F7F4;border-radius:6px">
+        💡 เพื่อซ่อน URL และวันที่:<br>เปิด "More settings" แล้วปิด "Headers and footers"
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button id="cancel-print" style="padding:8px 18px;border:1px solid #E2E6EA;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;font-family:Sarabun,sans-serif">ยกเลิก</button>
+        <button id="confirm-print" style="padding:8px 18px;background:#1A3A5C;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-family:Sarabun,sans-serif">🖨️ พิมพ์</button>
+      </div>
+    </div>`;
+  
+  document.body.appendChild(overlay);
+  
+  document.getElementById('cancel-print').onclick = () => {
+    overlay.remove();
+    pr.style.display='none';
+  };
+  
+  document.getElementById('confirm-print').onclick = () => {
+    showSig = document.getElementById('toggle-sig').checked;
+    // Hide/show signature images
+    const sigs = pr.querySelectorAll('.print-sig-img');
+    sigs.forEach(s => s.style.visibility = showSig ? 'visible' : 'hidden');
+    overlay.remove();
     setTimeout(() => {
       window.print();
       pr.style.display='none';
-      tip.remove();
-    }, 1500);
+      sigs.forEach(s => s.style.visibility = 'visible'); // restore
+    }, 300);
+  };
   }, 300);
 }
 
