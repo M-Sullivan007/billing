@@ -1733,32 +1733,20 @@ function applyInstallmentPct() {
   const job = DB.jobs.find(j=>j.index===jobIdx);
   if(!job) return;
 
-  // Get QT subtotal for this job
+  // Get QT for this job
   const firstQT = DB.docs.filter(d=>d.jobIndex===jobIdx&&d.type==='QT')
     .sort((a,b)=>a.date.localeCompare(b.date))[0];
   if(!firstQT) { showToast('ไม่พบใบเสนอราคา (QT) ของงานนี้','error'); return; }
 
-  const qtSub = firstQT.subtotal;
-  const instSub = Math.round(qtSub * pct / 100);
-
-  // Apply to first item row
-  const rows = document.querySelectorAll('#items-body tr');
-  if(rows.length > 0) {
-    const unitInput = rows[0].querySelectorAll('input')[1];
-    if(unitInput) {
-      unitInput.value = instSub;
-      calcTotals();
-    }
-  }
-
-  // Also fill installment-amount field with the net amount
-  const firstQTNet = firstQT.netAmount || (firstQT.subtotal * 1.07 * 0.97); // fallback
+  // Calculate installment net amount (from QT net)
   const instNet = Math.round(firstQT.netAmount * pct / 100);
+
+  // Only fill the installment-amount field - do NOT touch item rows
   const instAmountEl = document.getElementById('f-installment-amount');
   if(instAmountEl) instAmountEl.value = instNet;
 
   const resultEl = document.getElementById('pct-result');
-  if(resultEl) resultEl.textContent = '→ subtotal ' + fmtN(instSub) + ' / net ' + fmtN(instNet) + ' ฿';
+  if(resultEl) resultEl.textContent = '→ ยอดชำระงวดนี้ ' + fmtN(instNet) + ' ฿';
 }
 
 function fillJobData() {
