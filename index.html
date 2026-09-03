@@ -1865,10 +1865,11 @@ async function updateDoc() {
       dueDate, refDoc, projectName,
       sub, vat, wr, wht, net,
       instNo, instStat,
-      JSON.stringify(items), doc.note
+      JSON.stringify(items),
+      instAmount ? JSON.stringify({instAmt:instAmount}) : (doc.note||'')
     ];
     if(row) await updateCell('Documents', `A${row}:Q${row}`, [values]);
-    Object.assign(doc, { date, dueDate, refDocId:refDoc, project:projectName, items, subtotal:sub, vat, whtRate:wr, whtAmount:wht, netAmount:net, installmentNo:parseInt(instNo)||0, installmentStatus:instStat });
+    Object.assign(doc, { date, dueDate, refDocId:refDoc, project:projectName, items, subtotal:sub, vat, whtRate:wr, whtAmount:wht, netAmount:net, installmentNo:parseInt(instNo)||0, installmentStatus:instStat, installmentAmount:instAmount||0 });
     showToast('บันทึกการแก้ไขสำเร็จ!');
     goBack();
   } catch(e) { showToast('บันทึกไม่สำเร็จ: '+e.message,'error'); }
