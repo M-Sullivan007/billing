@@ -538,7 +538,7 @@ async function loadAllData() {
         whtAmount: parseFloat(r[11])||0, netAmount: parseFloat(r[12])||0,
         installmentNo: parseInt(r[13])||0, installmentStatus: r[14]||'',
         items: tryParse(r[15]), note: r[16]||'',
-        ...(()=>{ try { const n=JSON.parse(r[16]||'{}'); return n.qqCustomer?{qqCustomer:n.qqCustomer,qqAddress:n.qqAddress,qqTaxId:n.qqTaxId}:{}; } catch(e){return {};} })(),
+        ...(()=>{ try { const n=JSON.parse(r[16]||'{}'); return { ...(n.qqCustomer?{qqCustomer:n.qqCustomer,qqContact:n.qqContact,qqPhone:n.qqPhone,qqAddress:n.qqAddress,qqTaxId:n.qqTaxId}:{}), ...(n.instAmt?{installmentAmount:n.instAmt}:{}) }; } catch(e){return {};} })(),
         _row: i+1
       });
     }
@@ -1635,6 +1635,11 @@ function renderDocForm(doc) {
         <input type="number" id="f-installment-no" value="${doc&&doc.installmentNo||''}" placeholder="-" style="width:60px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px">
       </div>
       <div style="display:flex;align-items:center;gap:7px;font-size:13px">
+        ยอดชำระงวดนี้:
+        <input type="number" id="f-installment-amount" value="${doc&&doc.installmentAmount||''}" placeholder="ไม่ระบุ" style="width:110px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px">
+        <span style="font-size:11px;color:var(--text-3)">฿ (ถ้ามี)</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:7px;font-size:13px">
         สถานะงวด:
         <select class="form-input" id="f-installment-status" style="width:auto;padding:4px 8px;font-size:12px">
           <option value="" ${!doc||!doc.installmentStatus?'selected':''}>-</option>
@@ -1746,8 +1751,14 @@ function applyInstallmentPct() {
     }
   }
 
+  // Also fill installment-amount field with the net amount
+  const firstQTNet = firstQT.netAmount || (firstQT.subtotal * 1.07 * 0.97); // fallback
+  const instNet = Math.round(firstQT.netAmount * pct / 100);
+  const instAmountEl = document.getElementById('f-installment-amount');
+  if(instAmountEl) instAmountEl.value = instNet;
+
   const resultEl = document.getElementById('pct-result');
-  if(resultEl) resultEl.textContent = '→ ' + fmtN(instSub) + ' ฿';
+  if(resultEl) resultEl.textContent = '→ subtotal ' + fmtN(instSub) + ' / net ' + fmtN(instNet) + ' ฿';
 }
 
 function fillJobData() {
@@ -1818,7 +1829,7 @@ async function saveNewDoc() {
       sub, vat, wr, wht, net,
       instNo, instStatus,
       JSON.stringify(items),
-      qqCustomer ? JSON.stringify({qqCustomer,qqContact,qqPhone,qqAddress,qqTaxId}) : ''
+      qqCustomer ? JSON.stringify({qqCustomer,qqContact,qqPhone,qqAddress,qqTaxId,instAmt:instAmount}) : (instAmount ? JSON.stringify({instAmt:instAmount}) : '')
     ];
     await appendRow('Documents', row);
     const newDoc = { id:did,docId,type,jobIndex:jobIdx,date,dueDate:row[5],refDocId:row[6],project:row[7],subtotal:sub,vat,whtRate:wr,whtAmount:wht,netAmount:net,note:'',items };
@@ -1855,6 +1866,7 @@ async function updateDoc() {
   const projectName = gv('f-project','');
   const instNo = gv('f-installment-no','');
   const instStat = gv('f-installment-status','');
+  const instAmount = parseFloat(gv('f-installment-amount',''))||0;
 
   setContent('<div class="loading"><div class="spinner"></div> กำลังบันทึก...</div>');
   try {
@@ -1963,6 +1975,7 @@ function printDoc(docId) {
         ${wht>0?`<div class="print-total-row"><span>ภาษีหัก ณ ที่จ่าย (${doc.whtRate}%)</span><span>${fmtN(wht)}</span></div>`:''}
         <div class="print-total-row net"><span>สุทธิ</span><span>${fmtN(net)}</span></div>
         <div style="font-size:9.5px;color:#444;margin-top:4px;text-align:left">(${numThai(net)})</div>
+        ${doc.installmentAmount?`<div style="margin-top:8px;padding:6px 8px;background:#FEF3C7;border-radius:4px;font-size:10px;color:#92400E;font-weight:600;text-align:left">ชำระงวดที่ ${doc.installmentNo||'—'}: ${fmtN(doc.installmentAmount)} ฿</div>`:''}
       </div>
     </div>
     <div style="clear:both"></div>
